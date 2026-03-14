@@ -10,6 +10,7 @@ import { followStreamer, joinFanClub, likeStream, detectActions } from './auto-a
 import { startRoomAnalysis, getRoomUnderstanding } from './room-context';
 import { recordVisit, recordMyMessage, recordStreamerFeedback, isDuplicate, getMemory } from './persona';
 import { generateSuggestions, shouldSendGift } from './ai-suggest';
+import { getStreamerProfileUrl, sendDirectMessage } from './messenger';
 import { DanmakuMessage } from '../shared/types';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
@@ -204,7 +205,7 @@ async function main() {
 
   // ─── 交互模式 ───
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: '\x1b[33m> \x1b[0m' });
-  console.log(`\n命令: s=AI建议 | d <文>=发弹幕 | g=送礼 | gl=礼物列表 | i=信息 | q=退出\n`);
+  console.log(`\n命令: s=AI建议 | d <文>=发弹幕 | g=送礼 | gl=礼物列表 | dm=私信 | i=信息 | q=退出\n`);
   rl.prompt();
 
   rl.on('line', async (line) => {
@@ -225,6 +226,15 @@ async function main() {
         case 'd': if (arg) { await sendDanmaku(page, arg); myReplies.push(arg); } break;
         case 'g': arg ? await sendGiftByName(page, arg) : await sendCheapGift(page); break;
         case 'gl': (await listGifts(page)).forEach((g, i) => console.log(`  ${i+1}. ${g.name} (${g.price})`)); break;
+        case 'dm': {
+          const pUrl = await getStreamerProfileUrl(page);
+          if (pUrl) await sendDirectMessage(page, pUrl, roomContext.streamerName, arg || undefined);
+          else console.log('未找到主播主页链接');
+          // 导航回直播间
+          await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+          break;
+        }
         case 'i': {
           const c = await parseRoomContext(page); const v = getTranscriptHistory();
           console.log(`  主播: ${c?.streamerName}\n  弹幕: ${getHistory().length}\n  语音: ${v.length}\n  送礼: ${giftCount}\n  我的回复: ${myReplies.length}`);

@@ -13,6 +13,7 @@ import { injectSubtitleOverlay, showVoiceSubtitle, showInfoSubtitle } from './su
 import { followStreamer, joinFanClub, likeStream, detectActions } from './auto-actions';
 import { startRoomAnalysis, getRoomUnderstanding } from './room-context';
 import { recordVisit, recordMyMessage, recordStreamerFeedback, isDuplicate } from './persona';
+import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM } from './messenger';
 import { generateSuggestions, shouldSendGift } from './ai-suggest';
 import { canAfford, recordSpending, getBudgetStatus } from './budget';
 import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
@@ -190,7 +191,15 @@ async function main() {
       } catch {}
     }
 
-    // 离开前汇报
+    // 离开前：如果关系够了，发私信
+    if (shouldSendDM(roomCtx.streamerName)) {
+      const profileUrl = await getStreamerProfileUrl(page);
+      if (profileUrl) {
+        console.log(`\n[私信] 关系已到 ${memory.relationship}，尝试发私信...`);
+        await sendDirectMessage(page, profileUrl, roomCtx.streamerName);
+      }
+    }
+
     const budget = getBudgetStatus();
     console.log(`\n[调度] 离开 ${roomCtx.streamerName} | 弹幕:${danmakuCount} | 互动:${totalInteractions} | 花费:¥${budget.spent}`);
   }
