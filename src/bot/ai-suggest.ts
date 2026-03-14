@@ -1,30 +1,36 @@
 import { ChatSuggestionItem, LiveRoomContext, DanmakuMessage } from '../shared/types';
+import { getRoomUnderstanding } from './room-context';
+import { PERSONA, getMemory } from './persona';
 
-const SYSTEM_PROMPT = `你是一个直播间弹幕高手，目标是帮用户(昵称tapool)在女主播直播间里建立存在感、留下深刻印象。
+function buildSystemPrompt(streamerName: string): string {
+  const mem = getMemory(streamerName);
+  const relationDesc = {
+    stranger: '第一次来这个直播间，先观察氛围再自然加入',
+    newcomer: '来过几次了，可以稍微熟络一点',
+    regular: '常客了，可以开一些熟人之间的玩笑',
+    familiar: '老朋友了，聊天可以更随意和深入',
+  }[mem.relationship];
 
-## 核心策略
-- 做直播间里最有趣的人，不是最殷勤的
-- 幽默、机智、有个性，让主播主动想跟你聊
-- 对主播说的话做精准回应，不泛泛而谈
-- 适当调侃（善意），制造记忆点
-- 如果主播提到了"tapool"或读了你的弹幕，抓住机会深入互动
-- 绝不舔、不跪、不表白
+  const feedbackInfo = mem.streamerFeedback.length > 0
+    ? `\n主播之前对你的反应：${mem.streamerFeedback.slice(-3).join('；')}`
+    : '';
 
-## 风格
-- 像一个有趣的、见过世面的朋友
-- 短、精、准，不废话
-- 不用"哥/姐/亲/宝"
-- 偶尔幽默调侃，偶尔认真走心
+  return `你是"${PERSONA.nickname}"，${PERSONA.identity}。${PERSONA.style}。
+兴趣爱好：${PERSONA.interests.join('、')}。
 
-## 重要
-- 如果"主播语音"内容明显是歌词（有韵律、不像对话），输出空数组 []，不要回复歌词
-- 如果主播在放自动语音/广告（"点赞订阅转发"之类），也输出空数组 []
-- 只回复主播真正在说话/聊天/互动的内容
+你在${streamerName}的直播间。${relationDesc}。来过${mem.visitCount}次。
+${feedbackInfo}
+
+## 规则
+${PERSONA.dontDo.map(d => '- ' + d).join('\n')}
+- 如果主播语音是歌词/背景音乐/自动广告语，返回空数组 []
+- 如果没什么好说的，也返回 []，沉默比废话好
+- 如果主播提到了你(tapool/太婆/tap)，一定要回应，抓住机会
+- 回复要结合直播间画像和上下文
 
 ## 输出
-- 生成 1-3 条候选弹幕（如果不该回复就返回空数组 []）
-- 每条不超过 15 个字
-- JSON 数组，含 text 和 reason 字段`;
+- 0-2 条弹幕，JSON 数组 [{text, reason}]，每条 ≤15 字`;
+}
 
 function buildUserPrompt(
   context: LiveRoomContext,
@@ -32,27 +38,31 @@ function buildUserPrompt(
   voiceTranscripts: string[],
   myRecentReplies: string[],
 ): string {
-  const danmakuText = recentDanmaku
-    .slice(-8)
-    .map((d) => `${d.isStreamer ? '[主播]' : ''}${d.sender}: ${d.content}`)
-    .join('\n');
+  const understanding = getRoomUnderstanding();
+  const roomInfo = [
+    understanding.appearance ? `画面：${understanding.appearance}` : '',
+    understanding.currentActivity ? `正在：${understanding.currentActivity}` : '',
+    understanding.mood ? `情绪：${understanding.mood}` : '',
+    understanding.hotTopics.length ? `话题：${understanding.hotTopics.join('、')}` : '',
+  ].filter(Boolean).join('\n');
 
   const voiceText = voiceTranscripts.length > 0
-    ? '\n主播语音（可能是说话也可能是歌词，请判断）：\n' + voiceTranscripts.slice(-3).join('\n')
+    ? '\n主播语音（判断是说话还是歌词）：\n' + voiceTranscripts.slice(-3).join('\n')
     : '';
+
+  const danmakuText = recentDanmaku.slice(-8)
+    .map(d => `${d.sender}: ${d.content}`).join('\n');
 
   const myReplies = myRecentReplies.length > 0
-    ? '\n我(tapool)最近发过的弹幕（避免重复类似的话）：\n' + myRecentReplies.slice(-5).join('\n')
+    ? '\n我最近发的（不要重复类似的话）：\n' + myRecentReplies.slice(-5).join('\n')
     : '';
 
-  return `直播间：${context.streamerName}
-${voiceText}
+  return `${roomInfo ? '直播间画像：\n' + roomInfo + '\n' : ''}${voiceText}
 
-最近弹幕：
-${danmakuText || '（暂无）'}
-${myReplies}
+弹幕：
+${danmakuText || '（无）'}${myReplies}
 
-如果主播在唱歌/放歌/放自动语音，返回 []。否则生成 1-2 条有趣的弹幕。直接输出 JSON。`;
+输出 JSON 数组。不该说话时返回 []。`;
 }
 
 export async function generateSuggestions(
@@ -70,26 +80,24 @@ export async function generateSuggestions(
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 200,
+      max_tokens: 150,
       temperature: 0.9,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: buildSystemPrompt(context.streamerName) },
         { role: 'user', content: buildUserPrompt(context, recentDanmaku, voiceTranscripts, myRecentReplies) },
       ],
     }),
   });
 
   if (!response.ok) throw new Error(`OpenAI: ${response.status}`);
-
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content ?? '[]';
-  const jsonMatch = text.match(/\[[\s\S]*?\]/);
-  if (!jsonMatch) return [];
-  const result = JSON.parse(jsonMatch[0]) as ChatSuggestionItem[];
-  return result;
+  const match = text.match(/\[[\s\S]*?\]/);
+  if (!match) return [];
+  return JSON.parse(match[0]) as ChatSuggestionItem[];
 }
 
-/** 判断是否是送礼好时机 */
+/** 送礼判断 */
 export async function shouldSendGift(
   apiKey: string,
   voiceText: string,
@@ -104,13 +112,13 @@ export async function shouldSendGift(
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       max_tokens: 60,
-      messages: [
-        {
-          role: 'system',
-          content: `判断是否值得送小礼物(1毛钱)。只在这些情况送：主播直接感谢tapool、主播唱完一首歌、主播说要下播。其他都不送。如果是歌词/背景音乐也不送。JSON: {"should":true/false,"reason":""}`,
-        },
-        { role: 'user', content: `${streamerName}说：「${voiceText}」` },
-      ],
+      messages: [{
+        role: 'system',
+        content: `只在这些情况送小礼物：主播直接感谢tapool、唱完整首歌、说要下播。歌词/广告不送。JSON:{"should":false,"reason":""}`,
+      }, {
+        role: 'user',
+        content: `${streamerName}说：「${voiceText}」`,
+      }],
     }),
   });
 
@@ -118,9 +126,7 @@ export async function shouldSendGift(
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content ?? '{}';
   try {
-    const match = text.match(/\{[\s\S]*?\}/);
-    return match ? JSON.parse(match[0]) : { should: false, reason: '' };
-  } catch {
-    return { should: false, reason: '' };
-  }
+    const m = text.match(/\{[\s\S]*?\}/);
+    return m ? JSON.parse(m[0]) : { should: false, reason: '' };
+  } catch { return { should: false, reason: '' }; }
 }

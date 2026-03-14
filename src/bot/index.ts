@@ -7,6 +7,8 @@ import { sendCheapGift, sendGiftByName, listGifts } from './gift-sender';
 import { startVoiceMonitor, getTranscriptHistory } from './voice-monitor';
 import { injectSubtitleOverlay, showVoiceSubtitle, showInfoSubtitle } from './subtitle-overlay';
 import { followStreamer, joinFanClub, likeStream, detectActions } from './auto-actions';
+import { startRoomAnalysis, getRoomUnderstanding } from './room-context';
+import { recordVisit, recordMyMessage, recordStreamerFeedback, isDuplicate, getMemory } from './persona';
 import { generateSuggestions, shouldSendGift } from './ai-suggest';
 import { DanmakuMessage } from '../shared/types';
 
@@ -46,11 +48,16 @@ async function main() {
 
   await injectSubtitleOverlay(page);
 
+  // 记录访问 + 加载记忆
+  const memory = recordVisit(roomContext.streamerName);
+
   console.log('\n╔════════════════════════════════════════════╗');
   console.log('║  Thomas Claw — 抖音直播助手                 ║');
   console.log('╠════════════════════════════════════════════╣');
   console.log(`║  主播: ${roomContext.streamerName.padEnd(34)}║`);
   console.log(`║  房间: ${roomContext.roomId.padEnd(34)}║`);
+  console.log(`║  关系: ${memory.relationship.padEnd(34)}║`);
+  console.log(`║  来访: 第${memory.visitCount}次${' '.repeat(30 - String(memory.visitCount).length)}║`);
   console.log('╚════════════════════════════════════════════╝\n');
 
   let danmakuCount = 0;
@@ -81,7 +88,7 @@ async function main() {
         mentionedMe = true;
         console.log(`\x1b[32m[注意]\x1b[0m 主播提到了你！`);
         await showInfoSubtitle(page, '⭐ 主播提到了你！', 'rgba(241,196,15,0.9)');
-        // 立即触发一次回复
+        recordStreamerFeedback(roomContext.streamerName, voiceText);
         lastAutoReply = 0;
       }
     }
@@ -126,6 +133,9 @@ async function main() {
     }
   });
 
+  // 3. 直播间持续理解
+  await startRoomAnalysis(page, roomContext.streamerName, getHistory, getTranscriptHistory);
+
   // ─── 非交互模式 ───
   if (!isTTY) {
     console.log('[模式] 全自动 — 随机节奏回复 + 语音字幕 + 智能送礼\n');
@@ -155,14 +165,20 @@ async function main() {
         const suggestions = await generateSuggestions(OPENAI_API_KEY, ctx, history, voice, myReplies);
 
         if (suggestions.length > 0) {
-          const pick = suggestions[Math.floor(Math.random() * suggestions.length)];
-          console.log(`\n\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
-          await showInfoSubtitle(page, `💬 ${pick.text}`);
-          await sendDanmaku(page, pick.text);
-          myReplies.push(pick.text);
-          if (myReplies.length > 10) myReplies.shift();
-        } else {
-          // AI 判断不该回复（歌词/广告），静默
+          // 去重：过滤掉跟最近发过的太像的
+          const valid = suggestions.filter(s => !isDuplicate(roomContext.streamerName, s.text));
+          const pick = valid.length > 0
+            ? valid[Math.floor(Math.random() * valid.length)]
+            : null;
+
+          if (pick) {
+            console.log(`\n\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
+            await showInfoSubtitle(page, `💬 ${pick.text}`);
+            await sendDanmaku(page, pick.text);
+            myReplies.push(pick.text);
+            if (myReplies.length > 10) myReplies.shift();
+            recordMyMessage(roomContext.streamerName, pick.text);
+          }
         }
       } catch (e: any) {
         console.log(`[AI] ${e.message}`);
@@ -171,8 +187,9 @@ async function main() {
 
     // 状态
     setInterval(async () => {
-      const ctx = await parseRoomContext(page).catch(() => null);
+      const ru = getRoomUnderstanding();
       console.log(`\n[状态] ${new Date().toLocaleTimeString('zh-CN')} | 弹幕:${danmakuCount} | 语音:${getTranscriptHistory().length} | 送礼:${giftCount} | 下次回复:${Math.round(nextReplyDelay/1000)}s`);
+      if (ru.currentActivity) console.log(`[画像] ${ru.currentActivity} | ${ru.mood} | ${ru.hotTopics.join(',')}`);
     }, STATUS_INTERVAL);
 
     process.on('SIGINT', async () => {
