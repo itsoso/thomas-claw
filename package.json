@@ -1,0 +1,30 @@
+{
+  "name": "thomas-claw",
+  "version": "0.1.0",
+  "description": "抖音直播助手 Chrome Extension",
+  "private": true,
+  "scripts": {
+    "start": "npx tsx src/bot/index.ts",
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "copy-webpack-plugin": "^12.0.2",
+    "css-loader": "^7.1.2",
+    "html-webpack-plugin": "^5.6.3",
+    "playwright": "^1.58.2",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2",
+    "webpack": "^5.97.1",
+    "webpack-cli": "^6.0.1"
+  }
+}

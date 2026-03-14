@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.test-chrome-profile/
+test-screenshots/
+*.output
+.claude/

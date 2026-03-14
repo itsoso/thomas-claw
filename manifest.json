@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Thomas Claw - 抖音直播助手",
+  "version": "0.1.0",
+  "description": "抖音直播间互动助手：开播监控、弹幕建议、互动日志",
+  "permissions": [
+    "storage",
+    "tabs",
+    "notifications",
+    "sidePanel",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://live.douyin.com/*",
+    "https://api.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://live.douyin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Thomas Claw"
+  }
+}
