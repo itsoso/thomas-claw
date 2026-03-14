@@ -99,12 +99,15 @@ export async function startVoiceMonitor(
     return;
   }
 
+  // 重置历史
+  transcriptHistory.length = 0;
+
   // 取消 video 静音
   await page.evaluate(() => {
     document.querySelectorAll('video').forEach(function(v) { v.muted = false; });
-  });
+  }).catch(() => {});
 
-  await page.addScriptTag({ content: RECORDER_SCRIPT });
+  await page.addScriptTag({ content: RECORDER_SCRIPT }).catch(() => {});
   console.log('[语音] 主播语音监听已启动');
 
   let lastText = '';

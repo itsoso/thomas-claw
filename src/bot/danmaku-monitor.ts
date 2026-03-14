@@ -71,19 +71,25 @@ export async function startMonitor(
   page: Page,
   onMessage: DanmakuCallback,
 ): Promise<void> {
-  // 注入 Node 回调到页面
-  await page.exposeFunction('__onDanmaku', (msg: DanmakuMessage) => {
-    const key = `${msg.sender}:${msg.content}`;
-    if (key === lastSeenKey) return;
-    lastSeenKey = key;
+  // 重置历史
+  history.length = 0;
+  lastSeenKey = '';
 
-    history.push(msg);
-    if (history.length > MAX_HISTORY) history.shift();
-    onMessage(msg);
-  });
+  // 注入 Node 回调到页面（如果已经注入过则跳过）
+  try {
+    await page.exposeFunction('__onDanmaku', (msg: DanmakuMessage) => {
+      const key = `${msg.sender}:${msg.content}`;
+      if (key === lastSeenKey) return;
+      lastSeenKey = key;
 
-  // 用 addScriptTag 注入纯 JS，避免 tsx 转换问题
+      history.push(msg);
+      if (history.length > MAX_HISTORY) history.shift();
+      onMessage(msg);
+    });
+  } catch {
+    // 已经注入过，页面导航后自动重连
+  }
+
   await page.addScriptTag({ content: MONITOR_SCRIPT });
-
   console.log('[弹幕] 监听已启动');
 }

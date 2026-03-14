@@ -1,9 +1,9 @@
 /**
- * 全自动模式入口：发现 → 进入 → 互动 → 切换 → 循环
+ * OpenClaw 全自动模式：发现 → 进入 → 互动 → 私信 → 切换 → 循环
  */
 import { launchBrowser, closeBrowser } from './browser';
 import { trainTaste, loadTasteProfile } from './taste';
-import { discoverStreamers, DiscoveredStreamer } from './discover';
+import { discoverStreamers } from './discover';
 import { parseRoomContext } from './room-parser';
 import { startMonitor, getHistory } from './danmaku-monitor';
 import { sendDanmaku } from './danmaku-sender';
@@ -11,161 +11,191 @@ import { sendCheapGift } from './gift-sender';
 import { startVoiceMonitor, getTranscriptHistory } from './voice-monitor';
 import { injectSubtitleOverlay, showVoiceSubtitle, showInfoSubtitle } from './subtitle-overlay';
 import { followStreamer, joinFanClub, likeStream, detectActions } from './auto-actions';
-import { startRoomAnalysis, getRoomUnderstanding } from './room-context';
+import { startRoomAnalysis } from './room-context';
 import { recordVisit, recordMyMessage, recordStreamerFeedback, isDuplicate } from './persona';
-import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM } from './messenger';
 import { generateSuggestions, shouldSendGift } from './ai-suggest';
 import { canAfford, recordSpending, getBudgetStatus } from './budget';
 import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
+import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM } from './messenger';
+import { printDashboard, setDiscovered, addVisited, setCurrent, incDanmaku, incReply, incGift, addDM } from './dashboard';
 import { DanmakuMessage } from '../shared/types';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
-function randomInterval(minMs: number, maxMs: number): number {
-  return minMs + Math.floor(Math.random() * (maxMs - minMs));
+function randomMs(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min));
 }
-
-async function sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
 async function main() {
-  if (!OPENAI_API_KEY) {
-    console.error('请设置 OPENAI_API_KEY 环境变量');
-    process.exit(1);
-  }
+  if (!OPENAI_API_KEY) { console.error('请设置 OPENAI_API_KEY'); process.exit(1); }
 
-  console.log('\n╔════════════════════════════════════╗');
-  console.log('║  OpenClaw — 抖音全自动社交系统      ║');
-  console.log('╚════════════════════════════════════╝\n');
+  console.log('\n\x1b[1m  OpenClaw — 抖音全自动社交系统\x1b[0m\n');
 
-  // 1. 品味训练
+  // 品味
   let taste = loadTasteProfile();
-  if (!taste || taste.descriptions.length === 0) {
+  if (!taste || !taste.summary) {
     taste = await trainTaste();
   } else {
-    console.log(`[品味] 已加载画像: ${taste.summary}`);
+    console.log(`[品味] ${taste.summary}`);
   }
 
-  // 2. 启动浏览器
+  // 浏览器
   const session = await launchBrowser('https://live.douyin.com');
   const { page } = session;
 
-  // 3. 发现主播
-  const discovered = await discoverStreamers(page, taste, 10);
+  // 发现
+  let discovered = await discoverStreamers(page, taste, 8);
+  setDiscovered(discovered.length);
+
   if (discovered.length === 0) {
-    console.log('[发现] 未找到符合品味的主播，请检查品味训练图片');
-    await closeBrowser(session);
-    process.exit(1);
+    console.log('[发现] 未找到符合的主播。用默认品味重试...');
+    taste = { descriptions: [], summary: '年轻女性主播', updatedAt: Date.now() };
+    discovered = await discoverStreamers(page, taste, 8);
+    setDiscovered(discovered.length);
   }
 
-  // 4. 开始自动循环
   const visited = new Set<string>();
-  let totalInteractions = 0;
 
   process.on('SIGINT', async () => {
-    const budget = getBudgetStatus();
-    console.log(`\n\n[结束] 互动 ${totalInteractions} 次 | 花费 ¥${budget.spent}/${budget.limit} | 送礼 ${budget.count} 次`);
+    printDashboard();
     await closeBrowser(session);
     process.exit(0);
   });
 
+  // ─── 主循环 ───
   while (true) {
-    // 选择下一个直播间
-    const target = pickNext(discovered, visited);
+    // 选下一个
+    let target = pickNext(discovered, visited);
+
     if (!target) {
-      console.log('[调度] 所有推荐主播已访问，重新发现...');
-      const newDiscovered = await discoverStreamers(page, taste, 10);
-      discovered.push(...newDiscovered);
-      if (newDiscovered.length === 0) {
-        console.log('[调度] 没有更多主播，等待 5 分钟...');
-        await sleep(300_000);
-        continue;
-      }
+      printDashboard();
+      console.log('[调度] 重新发现...');
+      await page.goto('https://live.douyin.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await sleep(3000);
+      const more = await discoverStreamers(page, taste!, 8);
+      discovered.push(...more);
+      setDiscovered(discovered.length);
+      if (more.length === 0) { console.log('[调度] 等待 3 分钟...'); await sleep(180_000); }
       continue;
     }
 
     visited.add(target.url);
-    await navigateToStream(page, target.url);
 
-    // 解析直播间
-    const roomCtx = await parseRoomContext(page);
-    if (!roomCtx) {
-      console.log('[调度] 无法解析直播间，跳过');
+    // 进入直播间
+    try {
+      await navigateToStream(page, target.url);
+    } catch (e: any) {
+      console.log(`[调度] 导航失败: ${e.message}`);
       continue;
     }
 
-    const memory = recordVisit(roomCtx.streamerName);
-    await injectSubtitleOverlay(page);
+    const roomCtx = await parseRoomContext(page);
+    if (!roomCtx) { console.log('[调度] 解析失败，跳过'); continue; }
 
-    console.log(`\n╔══════════════════════════════════════╗`);
-    console.log(`║  ${roomCtx.streamerName.padEnd(34)}║`);
-    console.log(`║  评分: ${target.score}/10 | ${target.reason.padEnd(24)}║`);
-    console.log(`║  关系: ${memory.relationship} | 第${memory.visitCount}次来访${' '.repeat(16)}║`);
-    console.log(`╚══════════════════════════════════════╝\n`);
+    const memory = recordVisit(roomCtx.streamerName);
+    addVisited(roomCtx.streamerName);
+    setCurrent(roomCtx.streamerName);
+
+    // 注入 UI
+    try { await injectSubtitleOverlay(page); } catch {}
+
+    console.log(`\n[进入] ${roomCtx.streamerName} | 评分:${target.score}/10 | ${memory.relationship} | 第${memory.visitCount}次\n`);
 
     // 启动监听
-    let danmakuCount = 0;
     const myReplies: string[] = [];
     let mentionedMe = false;
     const executedActions = new Set<string>();
+    let profileUrl: string | null = null;
+    let giftCountThisRoom = 0;
 
-    await startMonitor(page, (msg: DanmakuMessage) => {
-      danmakuCount++;
-      const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const prefix = msg.isStreamer ? '\x1b[31m[主播]\x1b[0m' : '\x1b[36m[弹幕]\x1b[0m';
-      console.log(`${ts} ${prefix} ${msg.sender}: ${msg.content}`);
-    });
+    try {
+      // 先抓主播主页链接（后面发私信用）
+      profileUrl = await getStreamerProfileUrl(page);
 
-    await startVoiceMonitor(page, async (voiceText: string) => {
-      await showVoiceSubtitle(page, voiceText);
+      await startMonitor(page, (msg: DanmakuMessage) => {
+        incDanmaku();
+        const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const pfx = msg.isStreamer ? '\x1b[31m[主播]\x1b[0m' : '\x1b[36m[弹幕]\x1b[0m';
+        console.log(`${ts} ${pfx} ${msg.sender}: ${msg.content}`);
+      });
 
-      // 检测提到我
-      if (voiceText.includes('tapool') || voiceText.includes('TAP') || voiceText.includes('太婆')) {
-        if (!mentionedMe) {
+      await startVoiceMonitor(page, async (voiceText: string) => {
+        try { await showVoiceSubtitle(page, voiceText); } catch {}
+
+        // 被提到
+        if (/tapool|TAP|tap|太婆/i.test(voiceText) && !mentionedMe) {
           mentionedMe = true;
           recordStreamerFeedback(roomCtx.streamerName, voiceText);
-          await showInfoSubtitle(page, '⭐ 主播提到了你！', 'rgba(241,196,15,0.9)');
+          try { await showInfoSubtitle(page, '⭐ 主播提到了你！', 'rgba(241,196,15,0.9)'); } catch {}
         }
-      }
 
-      // 自动动作
-      const actions = detectActions(voiceText);
-      for (const a of actions) {
-        if (executedActions.has(a)) continue;
-        if (a === 'follow') { executedActions.add(a); await followStreamer(page); }
-        else if (a === 'join_fan_club') { executedActions.add(a); await joinFanClub(page); }
-        else if (a === 'like') { await likeStream(page); }
-      }
+        // 指令
+        for (const a of detectActions(voiceText)) {
+          if (executedActions.has(a)) continue;
+          try {
+            if (a === 'follow') { executedActions.add(a); await followStreamer(page); }
+            else if (a === 'join_fan_club') { executedActions.add(a); await joinFanClub(page); }
+            else if (a === 'like') { await likeStream(page); }
+          } catch {}
+        }
 
-      // 智能送礼
-      if (canAfford(1)) {
-        try {
-          const decision = await shouldSendGift(OPENAI_API_KEY, voiceText, roomCtx.streamerName);
-          if (decision.should) {
-            await showInfoSubtitle(page, `🎁 ${decision.reason}`, 'rgba(231,76,60,0.85)');
-            await sendCheapGift(page);
-            recordSpending(1, roomCtx.streamerName, '小心心');
-          }
-        } catch {}
-      }
-    });
+        // 送礼（每个直播间最多 2 次）
+        if (canAfford(1) && giftCountThisRoom < 2) {
+          try {
+            const d = await shouldSendGift(OPENAI_API_KEY, voiceText, roomCtx.streamerName);
+            if (d.should) {
+              giftCountThisRoom++;
+              try { await showInfoSubtitle(page, `🎁 ${d.reason}`, 'rgba(231,76,60,0.85)'); } catch {}
+              const ok = await sendCheapGift(page);
+              if (ok) { recordSpending(1, roomCtx.streamerName, '小心心'); incGift(); }
+            }
+          } catch {}
+        }
+      });
 
-    await startRoomAnalysis(page, roomCtx.streamerName, getHistory, getTranscriptHistory);
+      try { await startRoomAnalysis(page, roomCtx.streamerName, getHistory, getTranscriptHistory); } catch {}
+    } catch (e: any) {
+      console.log(`[监听] 启动失败: ${e.message}，跳过`);
+      continue;
+    }
 
-    // 计算停留时间
-    const stayDuration = calculateStayDuration();
-    const leaveAt = Date.now() + stayDuration;
-    console.log(`[调度] 将在此停留 ${Math.round(stayDuration / 60000)} 分钟\n`);
+    // 停留 + 互动
+    const stayMs = calculateStayDuration();
+    const leaveAt = Date.now() + stayMs;
+    console.log(`[调度] 停留 ${Math.round(stayMs / 60000)} 分钟\n`);
 
-    // 互动循环
-    let lastReply = 0;
+    // 第一次进入 20 秒后打招呼
+    let lastReply = Date.now() - randomMs(100_000, 220_000);
+    let firstGreetSent = false;
+
+    // 20 秒后发第一条打招呼
+    setTimeout(async () => {
+      if (firstGreetSent) return;
+      firstGreetSent = true;
+      try {
+        const greetings = ['来了来了', '晚上好呀', '路过看看', '刚到', '嗨'];
+        const pick = greetings[Math.floor(Math.random() * greetings.length)];
+        console.log(`\x1b[33m[AI]\x1b[0m "${pick}" \x1b[90m(打招呼)\x1b[0m`);
+        const sent = await sendDanmaku(page, pick);
+        if (sent) { myReplies.push(pick); recordMyMessage(roomCtx.streamerName, pick); incReply(); }
+      } catch {}
+    }, 20_000);
+
     while (Date.now() < leaveAt) {
       await sleep(10_000);
 
+      // 检查页面是否还在直播间
+      try {
+        const url = page.url();
+        if (!url.includes('live.douyin.com')) { console.log('[调度] 页面离开了直播间'); break; }
+      } catch { break; }
+
       const now = Date.now();
-      const replyInterval = mentionedMe ? 5000 : randomInterval(120_000, 240_000);
-      if (now - lastReply < replyInterval) continue;
+      const interval = mentionedMe ? 5000 : randomMs(120_000, 240_000);
+      if (now - lastReply < interval || !OPENAI_API_KEY) continue;
 
       const history = getHistory();
       const voice = getTranscriptHistory();
@@ -182,26 +212,30 @@ async function main() {
         if (valid.length > 0) {
           const pick = valid[Math.floor(Math.random() * valid.length)];
           console.log(`\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
-          await showInfoSubtitle(page, `💬 ${pick.text}`);
-          await sendDanmaku(page, pick.text);
-          myReplies.push(pick.text);
-          recordMyMessage(roomCtx.streamerName, pick.text);
-          totalInteractions++;
+          try { await showInfoSubtitle(page, `💬 ${pick.text}`); } catch {}
+          const sent = await sendDanmaku(page, pick.text);
+          if (sent) {
+            myReplies.push(pick.text);
+            recordMyMessage(roomCtx.streamerName, pick.text);
+            incReply();
+          }
         }
       } catch {}
     }
 
-    // 离开前：如果关系够了，发私信
-    if (shouldSendDM(roomCtx.streamerName)) {
-      const profileUrl = await getStreamerProfileUrl(page);
-      if (profileUrl) {
-        console.log(`\n[私信] 关系已到 ${memory.relationship}，尝试发私信...`);
-        await sendDirectMessage(page, profileUrl, roomCtx.streamerName);
+    // 离开：尝试发私信
+    if (shouldSendDM(roomCtx.streamerName) && profileUrl) {
+      try {
+        console.log(`\n[私信] 关系=${memory.relationship}，发送破冰消息...`);
+        const ok = await sendDirectMessage(page, profileUrl, roomCtx.streamerName);
+        if (ok) addDM(roomCtx.streamerName);
+      } catch (e: any) {
+        console.log(`[私信] 失败: ${e.message}`);
       }
     }
 
-    const budget = getBudgetStatus();
-    console.log(`\n[调度] 离开 ${roomCtx.streamerName} | 弹幕:${danmakuCount} | 互动:${totalInteractions} | 花费:¥${budget.spent}`);
+    setCurrent('');
+    printDashboard();
   }
 }
 

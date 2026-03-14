@@ -62,7 +62,7 @@ function buildUserPrompt(
 弹幕：
 ${danmakuText || '（无）'}${myReplies}
 
-输出 JSON 数组。不该说话时返回 []。`;
+纯唱歌/放歌/自动广告时返回 []。其他情况尽量回 1 条，哪怕只是简短反应。输出 JSON。`;
 }
 
 export async function generateSuggestions(
