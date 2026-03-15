@@ -225,8 +225,16 @@ async function main() {
       } catch {}
     }, 20_000);
 
+    let noReplyStreak = 0; // AI 连续判断不该回复的次数
+
     while (Date.now() < leaveAt) {
       await sleep(10_000);
+
+      // 如果连续 5 次 AI 都认为不该回复（唱歌直播间），提前离开
+      if (noReplyStreak >= 5 && Date.now() - lastReply > 120_000) {
+        console.log(`[调度] 互动机会少（可能是唱歌直播间），提前离开`);
+        break;
+      }
 
       // 检查页面是否还在直播间
       try {
@@ -251,6 +259,7 @@ async function main() {
         const valid = suggestions.filter(s => !isDuplicate(roomCtx.streamerName, s.text));
 
         if (valid.length > 0) {
+          noReplyStreak = 0;
           const pick = valid[Math.floor(Math.random() * valid.length)];
           console.log(`\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
           try { await showInfoSubtitle(page, `💬 ${pick.text}`); } catch {}
@@ -260,6 +269,8 @@ async function main() {
             recordMyMessage(roomCtx.streamerName, pick.text);
             incReply();
           }
+        } else {
+          noReplyStreak++;
         }
       } catch {}
     }

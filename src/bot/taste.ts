@@ -126,7 +126,7 @@ export async function matchesTaste(
         content: [
           {
             type: 'text',
-            text: `用户品味：${tasteProfile.summary}\n\n这个直播间的主播是否符合？JSON: {"match":true/false,"score":1-10,"reason":"简短原因"}。\n如果看不清主播、不是女性直播间、明显是录播/回放/电台/无人画面/纯文字画面/动画，match=false。`,
+            text: `用户品味：${tasteProfile.summary}\n\n这个直播间的主播是否符合？JSON: {"match":true/false,"score":1-10,"reason":"简短原因"}。\n如果看不清主播、不是女性直播间、录播/回放/电台/动画/纯文字画面，match=false。\n如果主播拿着麦克风在唱歌，score最多5分（我们更喜欢聊天互动类的直播间）。\n聊天/日常/互动类的直播间加2分。`,
           },
           {
             type: 'image_url',
