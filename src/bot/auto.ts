@@ -230,6 +230,57 @@ async function main() {
       continue;
     }
 
+    // 核心检查：截图验证主播是否符合品味（有没有真人女主播在镜头前）
+    try {
+      const screenshot = await page.screenshot({
+        type: 'jpeg', quality: 40,
+        clip: { x: 0, y: 0, width: 900, height: 700 },
+        timeout: 5000,
+      });
+      const base64 = screenshot.toString('base64');
+
+      const verifyResp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini', max_tokens: 80,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: '这是一个抖音直播间截图。回答JSON：{"hasStreamer":true/false,"isYoungWoman":true/false,"isChattable":true/false,"reason":"一句话"}。\nhasStreamer=画面中有真人主播（不是黑屏/文字/商品/动画）\nisYoungWoman=主播是20-35岁的年轻女性\nisChattable=主播在聊天/日常（不是唱歌/弹琴/表演/教学/带货）' },
+              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'low' } },
+            ],
+          }],
+        }),
+      });
+
+      if (verifyResp.ok) {
+        const vData = await verifyResp.json();
+        const vText = vData.choices?.[0]?.message?.content ?? '{}';
+        const vMatch = vText.match(/\{[\s\S]*?\}/);
+        if (vMatch) {
+          const v = JSON.parse(vMatch[0]);
+          if (!v.hasStreamer) {
+            console.log(`[调度] ${roomCtx.streamerName} — 没有主播在画面中，跳过`);
+            dashLog('调度', '跳过', `${roomCtx.streamerName}: ${v.reason || '无主播'}`, 'warning');
+            continue;
+          }
+          if (!v.isYoungWoman) {
+            console.log(`[调度] ${roomCtx.streamerName} — 不是年轻女主播，跳过 (${v.reason})`);
+            dashLog('调度', '跳过', `${roomCtx.streamerName}: ${v.reason || '不符合'}`, 'warning');
+            continue;
+          }
+          if (!v.isChattable) {
+            console.log(`[调度] ${roomCtx.streamerName} — 不是聊天类，跳过 (${v.reason})`);
+            dashLog('调度', '跳过', `${roomCtx.streamerName}: ${v.reason || '非聊天'}`, 'warning');
+            continue;
+          }
+          console.log(`[验证] ✅ ${roomCtx.streamerName} — ${v.reason}`);
+          dashLog('调度', '验证通过', `${roomCtx.streamerName}: ${v.reason}`, 'success');
+        }
+      }
+    } catch {}  // Vision 失败不阻塞，继续互动
+
     // 关闭所有弹窗（粉丝列表、登录框等）
     await page.keyboard.press('Escape').catch(() => {});
     await sleep(500);
