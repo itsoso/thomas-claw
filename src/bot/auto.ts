@@ -18,6 +18,7 @@ import { canAfford, recordSpending, getBudgetStatus } from './budget';
 import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
 import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM, checkAndReplyDMs } from './messenger';
 import { printDashboard, setDiscovered, addVisited, setCurrent, incDanmaku, incReply, incGift, addDM } from './dashboard';
+import { startWebDashboard, dashLog, dashSetStep, dashSetTaste, dashAddDiscovered, dashSetStreamer, dashSetRoomImage, dashSetVoice, dashSetAI, dashSetGift, dashSetDM, dashUpdateStats } from './web-dashboard';
 import { DanmakuMessage } from '../shared/types';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
@@ -31,6 +32,9 @@ function sleep(ms: number): Promise<void> {
 
 async function main() {
   if (!OPENAI_API_KEY) { console.error('请设置 OPENAI_API_KEY'); process.exit(1); }
+
+  // 启动 Web Dashboard
+  startWebDashboard(3456);
 
   console.log('\n\x1b[1m  OpenClaw — 抖音全自动社交系统\x1b[0m\n');
 
@@ -118,13 +122,31 @@ async function main() {
       continue;
     }
 
+    // 关闭所有弹窗（粉丝列表、登录框等）
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(500);
+    await page.evaluate(() => {
+      // 点击所有关闭按钮
+      document.querySelectorAll('[class*="close"], [class*="Close"]').forEach(function(el) {
+        var rect = (el as HTMLElement).getBoundingClientRect();
+        if (rect.width > 10 && rect.width < 60 && rect.height > 10 && rect.height < 60) {
+          var parent = el.closest('[class*="modal"], [class*="dialog"], [class*="popup"], [class*="panel"], [class*="overlay"]');
+          if (parent) (el as HTMLElement).click();
+        }
+      });
+    }).catch(() => {});
+    await sleep(500);
+
     const memory = recordVisit(roomCtx.streamerName);
     addVisited(roomCtx.streamerName);
     setCurrent(roomCtx.streamerName);
+    dashSetStreamer(roomCtx.streamerName);
 
     // 注入 UI
     try { await injectSubtitleOverlay(page); } catch {}
 
+    dashLog('互动', '进入', `${roomCtx.streamerName} (${target.score}/10) | ${memory.relationship} | 第${memory.visitCount}次`, 'success');
+    dashSetStep(`直播间`, `${roomCtx.streamerName} — 互动中`);
     console.log(`\n[进入] ${roomCtx.streamerName} | 评分:${target.score}/10 | ${memory.relationship} | 第${memory.visitCount}次\n`);
 
     // 启动监听
@@ -138,14 +160,23 @@ async function main() {
       // 先抓主播主页链接（后面发私信用）
       profileUrl = await getStreamerProfileUrl(page);
 
+      let danmakuCount = 0;
       await startMonitor(page, (msg: DanmakuMessage) => {
         incDanmaku();
+        danmakuCount++;
+        dashUpdateStats({ danmaku: danmakuCount });
+        dashLog('互动', msg.isStreamer ? '主播' : '弹幕', `${msg.sender}: ${msg.content}`, 'danmaku');
         const ts = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const pfx = msg.isStreamer ? '\x1b[31m[主播]\x1b[0m' : '\x1b[36m[弹幕]\x1b[0m';
         console.log(`${ts} ${pfx} ${msg.sender}: ${msg.content}`);
       });
 
+      let voiceCount = 0;
       await startVoiceMonitor(page, async (voiceText: string) => {
+        voiceCount++;
+        dashSetVoice(voiceText);
+        dashUpdateStats({ voice: voiceCount });
+        dashLog('互动', '语音', voiceText, 'voice');
         try { await showVoiceSubtitle(page, voiceText); } catch {}
 
         // 被提到
