@@ -6,6 +6,7 @@
   "scripts": {
     "start": "npx tsx src/bot/index.ts",
     "auto": "npx tsx src/bot/auto.ts",
+    "demo": "npx tsx src/bot/demo.ts",
     "taste": "npx tsx -e \"require('./src/bot/taste').trainTaste()\"",
     "build": "webpack --mode production",
     "dev": "webpack --mode development --watch"

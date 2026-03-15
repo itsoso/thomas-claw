@@ -16,7 +16,7 @@ import { recordVisit, recordMyMessage, recordStreamerFeedback, isDuplicate } fro
 import { generateSuggestions, shouldSendGift } from './ai-suggest';
 import { canAfford, recordSpending, getBudgetStatus } from './budget';
 import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
-import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM } from './messenger';
+import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM, checkAndReplyDMs } from './messenger';
 import { printDashboard, setDiscovered, addVisited, setCurrent, incDanmaku, incReply, incGift, addDM } from './dashboard';
 import { DanmakuMessage } from '../shared/types';
 
@@ -286,8 +286,46 @@ async function main() {
       }
     }
 
+    // 保存主页链接到记忆，方便后续检查私信回复
+    if (profileUrl) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        const memFile = path.join(os.homedir(), '.thomas-claw-memory.json');
+        const memData = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+        if (memData.streamers[roomCtx.streamerName]) {
+          memData.streamers[roomCtx.streamerName].profileUrl = profileUrl;
+          fs.writeFileSync(memFile, JSON.stringify(memData, null, 2));
+        }
+      } catch {}
+    }
+
     setCurrent('');
     printDashboard();
+
+    // 每 3 轮检查一次私信回复
+    if (visitCount % 3 === 0) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        const memFile = path.join(os.homedir(), '.thomas-claw-memory.json');
+        const memData = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+
+        for (const [name, mem] of Object.entries(memData.streamers || {}) as [string, any][]) {
+          const hasDM = mem.myMessages?.some((m: string) => m.startsWith('[私信]'));
+          const pUrl = mem.profileUrl;
+          if (!hasDM || !pUrl) continue;
+
+          console.log(`[私信检查] 检查 ${name} 是否有回复...`);
+          try {
+            const replied = await checkAndReplyDMs(page, pUrl, name);
+            if (replied) addDM(name);
+          } catch {}
+        }
+      } catch {}
+    }
   }
 }
 
