@@ -18,7 +18,7 @@ import { canAfford, recordSpending, getBudgetStatus } from './budget';
 import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
 import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM, checkAndReplyDMs } from './messenger';
 import { printDashboard, setDiscovered, addVisited, setCurrent, incDanmaku, incReply, incGift, addDM } from './dashboard';
-import { startWebDashboard, dashLog, dashSetStep, dashSetTaste, dashAddDiscovered, dashSetStreamer, dashSetRoomImage, dashSetVoice, dashSetAI, dashSetGift, dashSetDM, dashUpdateStats } from './web-dashboard';
+import { startWebDashboard, dashLog, dashSetStep, dashSetTaste, dashAddDiscovered, dashSetStreamer, dashSetRoomImage, dashSetVoice, dashSetAI, dashSetGift, dashSetDM, dashUpdateStats, dashLogInteraction, dashAddSummary } from './web-dashboard';
 import { DanmakuMessage } from '../shared/types';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
@@ -29,6 +29,9 @@ function randomMs(min: number, max: number): number {
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
+
+// 设置北京时区
+process.env.TZ = 'Asia/Shanghai';
 
 async function main() {
   if (!OPENAI_API_KEY) { console.error('请设置 OPENAI_API_KEY'); process.exit(1); }
@@ -63,6 +66,16 @@ async function main() {
 
   const visited = new Set<string>();  // 本轮已访问（每 5 个清空一次允许回访）
   let visitCount = 0;
+
+  // 每 30 分钟生成一次互动总结
+  setInterval(() => {
+    const budget = getBudgetStatus();
+    const stats = require('./dashboard').getStats();
+    const summary = `已访问${stats.visitedStreamers.length}个主播 | 弹幕${stats.totalDanmaku}条 | AI回复${stats.totalReplies}条 | 送礼${stats.totalGifts}次(¥${budget.spent}) | 私信${stats.dmsSent.length}个`;
+    dashAddSummary(summary);
+    dashLog('总结', '30分钟', summary, 'system');
+    console.log(`\n[30分钟总结] ${summary}\n`);
+  }, 1800_000);
 
   process.on('SIGINT', async () => {
     printDashboard();
@@ -199,7 +212,7 @@ async function main() {
               console.log(`\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
               try { await showInfoSubtitle(page, `💬 ${pick.text}`); } catch {}
               const sent = await sendDanmaku(page, pick.text);
-              if (sent) { myReplies.push(pick.text); recordMyMessage(roomCtx.streamerName, pick.text); incReply(); }
+              if (sent) { myReplies.push(pick.text); recordMyMessage(roomCtx.streamerName, pick.text); incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick.text); }
             }
           } catch {}
         }
@@ -228,6 +241,8 @@ async function main() {
               if (result.sent) {
                 recordSpending(result.diamonds, roomCtx.streamerName, result.name);
                 incGift();
+                dashLogInteraction('送礼', roomCtx.streamerName, `${result.name} (${result.diamonds}钻=¥${(result.diamonds*0.1).toFixed(1)}) ${level.reason}`);
+                dashSetGift(`${result.name} ${result.diamonds}钻`);
                 console.log(`\x1b[35m[送礼]\x1b[0m 已送 ${result.name} (${result.diamonds}钻 = ¥${(result.diamonds * 0.1).toFixed(1)})`);
               }
             }
@@ -259,7 +274,7 @@ async function main() {
         const pick = greetings[Math.floor(Math.random() * greetings.length)];
         console.log(`\x1b[33m[AI]\x1b[0m "${pick}" \x1b[90m(打招呼)\x1b[0m`);
         const sent = await sendDanmaku(page, pick);
-        if (sent) { myReplies.push(pick); recordMyMessage(roomCtx.streamerName, pick); incReply(); }
+        if (sent) { myReplies.push(pick); recordMyMessage(roomCtx.streamerName, pick); incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick); }
       } catch {}
     }, 20_000);
 
@@ -306,6 +321,7 @@ async function main() {
             myReplies.push(pick.text);
             recordMyMessage(roomCtx.streamerName, pick.text);
             incReply();
+            dashLogInteraction('弹幕发送', roomCtx.streamerName, pick.text);
           }
         } else {
           noReplyStreak++;
@@ -318,7 +334,7 @@ async function main() {
       try {
         console.log(`\n[私信] 关系=${memory.relationship}，发送破冰消息...`);
         const ok = await sendDirectMessage(page, profileUrl, roomCtx.streamerName);
-        if (ok) addDM(roomCtx.streamerName);
+        if (ok) { addDM(roomCtx.streamerName); dashLogInteraction('私信', roomCtx.streamerName, '破冰消息已发送'); dashSetDM(roomCtx.streamerName); }
       } catch (e: any) {
         console.log(`[私信] 失败: ${e.message}`);
       }

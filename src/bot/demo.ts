@@ -27,6 +27,9 @@ const TASTE_DIR = path.join(os.homedir(), '.thomas-claw-taste');
 
 function sleep(ms: number): Promise<void> { return new Promise(r => setTimeout(r, ms)); }
 
+// 设置北京时区
+process.env.TZ = 'Asia/Shanghai';
+
 async function main() {
   // 启动 Web Dashboard
   startWebDashboard(3456);

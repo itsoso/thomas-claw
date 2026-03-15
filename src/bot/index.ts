@@ -13,6 +13,8 @@ import { generateSuggestions, shouldSendGift } from './ai-suggest';
 import { getStreamerProfileUrl, sendDirectMessage } from './messenger';
 import { DanmakuMessage } from '../shared/types';
 
+process.env.TZ = 'Asia/Shanghai';
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const isTTY = process.stdin.isTTY;
 

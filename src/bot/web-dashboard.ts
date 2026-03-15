@@ -26,6 +26,8 @@ const state = {
   dmMessage: '',
   stats: { danmaku: 0, replies: 0, gifts: 0, voice: 0, spent: '0', remaining: '500' },
   giftConfig: { maxPerGift: 100, strategy: 'AI动态决定: 1-100钻 (¥0.1-10)' },
+  interactionLog: [] as { time: string; type: string; streamer: string; content: string }[],
+  summaries: [] as { time: string; text: string }[],
 };
 
 export function dashLog(step: string, tag: string, message: string, type: LogEntry['type'] = 'info') {
@@ -37,6 +39,17 @@ export function dashLog(step: string, tag: string, message: string, type: LogEnt
     ai: '\x1b[33m', voice: '\x1b[35m', danmaku: '\x1b[36m', gift: '\x1b[35m', dm: '\x1b[34m', system: '\x1b[90m',
   };
   console.log(`  ${time} ${colors[type] || ''}[${tag}]\x1b[0m ${message}`);
+}
+
+export function dashLogInteraction(type: string, streamer: string, content: string) {
+  const time = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  state.interactionLog.push({ time, type, streamer, content });
+  if (state.interactionLog.length > 500) state.interactionLog = state.interactionLog.slice(-500);
+}
+
+export function dashAddSummary(text: string) {
+  const time = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  state.summaries.push({ time, text });
 }
 
 export function dashSetStep(step: string, desc: string) { state.currentStep = step; state.stepDesc = desc; }
@@ -62,7 +75,7 @@ body { font-family: -apple-system, 'SF Pro', sans-serif; background:#0a0a0f; col
 .header { background:linear-gradient(135deg,#1a1a2e,#16213e); padding:20px 30px; border-bottom:1px solid #2a2a4a; }
 .header h1 { font-size:22px; color:#00d4ff; }
 .header p { font-size:12px; color:#888; margin-top:4px; }
-.container { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px; height:calc(100vh - 80px); }
+.container { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:16px; padding:16px; height:calc(100vh - 80px); }
 .panel { background:#12121f; border:1px solid #2a2a4a; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
 .panel-title { padding:12px 16px; font-size:13px; font-weight:600; color:#00d4ff; border-bottom:1px solid #1a1a3a; background:#15152a; }
 .panel-body { padding:12px 16px; overflow-y:auto; flex:1; font-size:12px; line-height:1.7; }
@@ -118,6 +131,13 @@ body { font-family: -apple-system, 'SF Pro', sans-serif; background:#0a0a0f; col
     <div class="panel-title">统计</div>
     <div class="panel-body" id="stats"></div>
   </div>
+  <div class="panel" style="grid-column:1/3">
+    <div class="panel-title">互动记录 & 半小时总结</div>
+    <div class="panel-body" id="interactions" style="display:flex;gap:16px;">
+      <div style="flex:2;overflow-y:auto" id="ilog"></div>
+      <div style="flex:1;border-left:1px solid #2a2a4a;padding-left:16px;overflow-y:auto" id="isummary"></div>
+    </div>
+  </div>
 </div>
 <script>
 function update() {
@@ -150,6 +170,23 @@ function update() {
       dHtml += '<div class="discovered-item"><span>' + x.name + '</span><span class="score">' + x.score + '/10</span></div>';
     });
     document.getElementById('discovered').innerHTML = dHtml || '<div style="color:#555">搜索中...</div>';
+
+    // Interaction log
+    var iHtml = '';
+    var il = (s.interactionLog||[]).slice(-50);
+    for (var k = il.length-1; k >= 0; k--) {
+      var ie = il[k];
+      var tc = ie.type==='弹幕发送'?'#fbbf24':ie.type==='送礼'?'#f472b6':ie.type==='私信'?'#818cf8':'#888';
+      iHtml += '<div style="padding:3px 0;border-bottom:1px solid #1a1a2a;font-size:11px"><span style="color:#555">' + ie.time.split(' ')[1] + '</span> <span style="color:'+tc+'">['+ie.type+']</span> <span style="color:#aaa">' + ie.streamer + '</span> ' + ie.content + '</div>';
+    }
+    document.getElementById('ilog').innerHTML = iHtml || '<div style="color:#555">等待互动...</div>';
+
+    // Summaries
+    var sumHtml = '<div style="font-size:12px;color:#00d4ff;margin-bottom:8px">每30分钟总结</div>';
+    (s.summaries||[]).forEach(function(sm) {
+      sumHtml += '<div style="padding:6px;background:#1a1a2e;border-radius:6px;margin-bottom:6px;font-size:11px"><div style="color:#555">' + sm.time + '</div><div style="color:#e0e0e0;margin-top:3px">' + sm.text + '</div></div>';
+    });
+    document.getElementById('isummary').innerHTML = sumHtml;
 
     // Stats
     var st = s.stats;
