@@ -246,6 +246,57 @@ export async function checkAndReplyDMs(
     console.log(`[私信] 🎉 ${streamerName} 回复了: "${replyText}"`);
     dashLog('私信', '收到回复', `${streamerName}: "${replyText}"`, 'success');
     dashLogInteraction('私信收到', streamerName, replyText);
+
+    // 自动回复！对方回复了说明已互关或愿意聊
+    try {
+      const mem = getMemory(streamerName);
+      const dmHistory = chatTexts.slice(-10);
+      const dmCount = dmHistory.length;
+
+      let sysPrompt: string;
+      if (dmCount <= 4) {
+        sysPrompt = `你在帮"小西瓜"回复女主播的私信。对方刚回复了你，继续聊。
+- 接住对方的话，自然展开
+- 可以分享自己的兴趣（旅行、美食、摄影）
+- 问她的日常/爱好
+- 25字以内`;
+      } else {
+        sysPrompt = `你在帮"小西瓜"继续私信。聊了${dmCount}轮了，关系不错。
+- 自然提议"加微信聊更方便"
+- 方式自然：比如"发你个照片微信方便些"
+- 如果不合适就继续正常聊
+- 25字以内`;
+      }
+
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini', max_tokens: 50, temperature: 0.8,
+          messages: [
+            { role: 'system', content: sysPrompt },
+            { role: 'user', content: `对方说：「${replyText}」\n之前的对话：${dmHistory.join(' | ')}` },
+          ],
+        }),
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const reply = data.choices?.[0]?.message?.content?.trim();
+        if (reply && reply.length > 0 && reply.length <= 30) {
+          console.log(`[私信] 自动回复: "${reply}"`);
+          const sent = await typeAndSendDM(page, reply);
+          if (sent) {
+            recordMyMessage(streamerName, `[私信] ${reply}`);
+            dashLogInteraction('私信发送', streamerName, reply);
+            dashLog('私信', '自动回复', `→ ${streamerName}: "${reply}"`, 'dm');
+          }
+        }
+      }
+    } catch (e: any) {
+      console.log(`[私信] 自动回复失败: ${e.message}`);
+    }
+
     return true;
   }
 
