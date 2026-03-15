@@ -135,6 +135,14 @@ async function main() {
       continue;
     }
 
+    // 检查是否是社交/聊天类（排除教学/书法/知识类）
+    const roomTitle = await page.title().catch(() => '');
+    const skipContent = ['书法', '国学', '国画', '讲棋', '健身', '瑜伽', '知识', '科普', '历史', '做饭', '武术', '禅修', '静心', '佛学'];
+    if (skipContent.some(kw => roomTitle.includes(kw) || roomCtx.streamerName.includes(kw))) {
+      console.log(`[调度] ${roomCtx.streamerName} 是教学/知识类，不是社交目标，跳过`);
+      continue;
+    }
+
     // 关闭所有弹窗（粉丝列表、登录框等）
     await page.keyboard.press('Escape').catch(() => {});
     await sleep(500);
