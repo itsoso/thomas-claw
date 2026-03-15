@@ -110,7 +110,13 @@ body { font-family: -apple-system, 'SF Pro', sans-serif; background:#0a0a0f; col
 .header { background:linear-gradient(135deg,#1a1a2e,#16213e); padding:20px 30px; border-bottom:1px solid #2a2a4a; }
 .header h1 { font-size:22px; color:#00d4ff; }
 .header p { font-size:12px; color:#888; margin-top:4px; }
-.container { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:16px; padding:16px; height:calc(100vh - 80px); }
+.tabs { display:flex; background:#15152a; border-bottom:1px solid #2a2a4a; }
+.tab { padding:10px 20px; cursor:pointer; color:#666; font-size:13px; border-bottom:2px solid transparent; }
+.tab.active { color:#00d4ff; border-bottom-color:#00d4ff; }
+.tab:hover { color:#aaa; }
+.tab-content { display:none; padding:16px; height:calc(100vh - 120px); overflow:hidden; }
+.tab-content.active { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.container { }
 .panel { background:#12121f; border:1px solid #2a2a4a; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
 .panel-title { padding:12px 16px; font-size:13px; font-weight:600; color:#00d4ff; border-bottom:1px solid #1a1a3a; background:#15152a; }
 .panel-body { padding:12px 16px; overflow-y:auto; flex:1; font-size:12px; line-height:1.7; }
@@ -145,33 +151,46 @@ body { font-family: -apple-system, 'SF Pro', sans-serif; background:#0a0a0f; col
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>OpenClaw Dashboard</h1>
-  <p>Powered by Playwright + GPT-4o | 实时自动化监控</p>
+<div class="header" style="display:flex;justify-content:space-between;align-items:center">
+  <div><h1>OpenClaw Dashboard</h1><p>Powered by Playwright + GPT-4o | 实时自动化监控</p></div>
+  <div id="clock" style="font-size:14px;color:#00d4ff;font-family:monospace"></div>
 </div>
-<div class="container">
-  <div class="panel">
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('overview')">总览</div>
+  <div class="tab" onclick="switchTab('logs')">实时日志</div>
+  <div class="tab" onclick="switchTab('interactions')">互动记录</div>
+  <div class="tab" onclick="switchTab('discovered')">发现主播</div>
+</div>
+<div class="tab-content active" id="tab-overview">
+  <div class="panel" style="height:100%">
     <div class="panel-title">当前状态</div>
     <div class="panel-body" id="status">加载中...</div>
   </div>
-  <div class="panel">
-    <div class="panel-title">实时日志</div>
-    <div class="panel-body" id="logs" style="font-family:monospace;"></div>
-  </div>
-  <div class="panel">
-    <div class="panel-title">发现的主播</div>
-    <div class="panel-body" id="discovered"></div>
-  </div>
-  <div class="panel">
+  <div class="panel" style="height:100%">
     <div class="panel-title">统计</div>
     <div class="panel-body" id="stats"></div>
   </div>
-  <div class="panel" style="grid-column:1/3">
-    <div class="panel-title">互动记录 & 半小时总结</div>
-    <div class="panel-body" id="interactions" style="display:flex;gap:16px;">
-      <div style="flex:2;overflow-y:auto" id="ilog"></div>
-      <div style="flex:1;border-left:1px solid #2a2a4a;padding-left:16px;overflow-y:auto" id="isummary"></div>
-    </div>
+</div>
+<div class="tab-content" id="tab-logs">
+  <div class="panel" style="grid-column:1/3;height:100%">
+    <div class="panel-title">实时日志 <span id="log-count" style="color:#555;font-weight:normal"></span></div>
+    <div class="panel-body" id="loglist" style="font-family:monospace;"></div>
+  </div>
+</div>
+<div class="tab-content" id="tab-interactions">
+  <div class="panel" style="height:100%">
+    <div class="panel-title">互动详情（弹幕/送礼/私信）</div>
+    <div class="panel-body" id="ilog"></div>
+  </div>
+  <div class="panel" style="height:100%">
+    <div class="panel-title">半小时总结</div>
+    <div class="panel-body" id="isummary"></div>
+  </div>
+</div>
+<div class="tab-content" id="tab-discovered">
+  <div class="panel" style="grid-column:1/3;height:100%">
+    <div class="panel-title">发现的主播</div>
+    <div class="panel-body" id="discovered"></div>
   </div>
 </div>
 <script>
@@ -197,7 +216,8 @@ function update() {
       var e = entries[i];
       logsHtml += '<div class="log-entry"><span class="log-time">' + e.time + '</span><span class="log-tag tag-' + e.type + '">' + e.tag + '</span><span class="log-msg">' + e.message + '</span></div>';
     }
-    document.getElementById('logs').innerHTML = logsHtml;
+    document.getElementById('loglist').innerHTML = logsHtml;
+    document.getElementById('log-count').textContent = '(' + d.logs.length + '条)';
 
     // Discovered
     var dHtml = '';
@@ -236,8 +256,19 @@ function update() {
       '</div>';
   }).catch(()=>{});
 }
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', hour12:false});
+}
 setInterval(update, 1500);
+setInterval(updateClock, 1000);
 update();
+updateClock();
 </script>
 </body>
 </html>`;
