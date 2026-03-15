@@ -72,22 +72,20 @@ async function generateDMMessage(
 
 /** 在 DM 面板中输入并发送消息 */
 async function typeAndSendDM(page: Page, message: string): Promise<boolean> {
-  const filled = await page.evaluate((msg) => {
-    var editor = document.querySelector('.public-DraftEditor-content[contenteditable="true"]') as HTMLElement;
-    if (!editor) {
-      var all = document.querySelectorAll('[contenteditable="true"]');
-      for (var i = 0; i < all.length; i++) {
-        var rect = all[i].getBoundingClientRect();
-        if (rect.x > 800 && rect.width > 100) { editor = all[i] as HTMLElement; break; }
-      }
-    }
-    if (!editor) return false;
-    editor.focus();
-    document.execCommand('insertText', false, msg);
-    return true;
-  }, message);
+  // 用 Playwright locator 点击 Draft.js 编辑器
+  const editor = page.locator('.public-DraftEditor-content[contenteditable="true"]');
+  if (!await editor.isVisible({ timeout: 3000 }).catch(() => false)) {
+    // 备选：找右侧任何 contenteditable
+    const fallback = page.locator('[contenteditable="true"]').last();
+    if (!await fallback.isVisible({ timeout: 1000 }).catch(() => false)) return false;
+    await fallback.click();
+  } else {
+    await editor.click();
+  }
 
-  if (!filled) return false;
+  await page.waitForTimeout(300);
+  // 用 keyboard.type 模拟真实输入（Draft.js 不支持 execCommand）
+  await page.keyboard.type(message, { delay: 30 });
   await page.waitForTimeout(300);
   await page.keyboard.press('Enter');
   return true;
