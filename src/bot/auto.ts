@@ -170,6 +170,58 @@ async function main() {
       continue;
     }
 
+    // 主播是否真的在线？检测 video 播放状态 + 画面内容
+    const streamerOnline = await page.evaluate(() => {
+      // 1. video 是否在播放
+      var videos = document.querySelectorAll('video');
+      var playing = false;
+      for (var i = 0; i < videos.length; i++) {
+        if (!videos[i].paused && videos[i].readyState >= 2) { playing = true; break; }
+      }
+      if (!playing) return { online: false, reason: 'video未播放' };
+
+      // 2. 在线人数是否大于0
+      var viewerEls = document.querySelectorAll('[class*="viewer"], [class*="audience"], [class*="online"]');
+      for (var j = 0; j < viewerEls.length; j++) {
+        var text = (viewerEls[j].textContent || '').trim();
+        if (text === '0' || text === '') continue;
+      }
+
+      // 3. 检查是否有"主播离开"/"直播已结束"提示
+      var bodyText = (document.body?.innerText || '').slice(0, 3000);
+      if (bodyText.includes('直播已结束') || bodyText.includes('主播离开') || bodyText.includes('暂时离开') || bodyText.includes('主播暂未开播')) {
+        return { online: false, reason: '主播已离开/未开播' };
+      }
+
+      return { online: true, reason: '' };
+    });
+
+    if (!streamerOnline.online) {
+      console.log(`[调度] ${roomCtx.streamerName} — ${streamerOnline.reason}，跳过`);
+      dashLog('调度', '跳过', `${roomCtx.streamerName}: ${streamerOnline.reason}`, 'warning');
+      continue;
+    }
+
+    // 额外验证：等5秒看看有没有弹幕活动
+    await sleep(5000);
+    const initialCheck = await page.evaluate(() => {
+      var items = document.querySelectorAll('[class*="chatroom___item"]');
+      return items.length;
+    });
+    if (initialCheck < 1) {
+      // 再等5秒
+      await sleep(5000);
+      const secondCheck = await page.evaluate(() => {
+        var items = document.querySelectorAll('[class*="chatroom___item"]');
+        return items.length;
+      });
+      if (secondCheck < 1) {
+        console.log(`[调度] ${roomCtx.streamerName} — 10秒内0条弹幕，直播间无活动，跳过`);
+        dashLog('调度', '跳过', `${roomCtx.streamerName}: 无弹幕活动`, 'warning');
+        continue;
+      }
+    }
+
     // 检查是否是社交/聊天类（排除教学/书法/知识类）
     const roomTitle = await page.title().catch(() => '');
     const skipContent = ['书法', '国学', '国画', '讲棋', '健身', '瑜伽', '知识', '科普', '历史', '做饭', '武术', '禅修', '静心', '佛学'];
