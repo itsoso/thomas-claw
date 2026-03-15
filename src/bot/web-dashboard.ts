@@ -45,11 +45,46 @@ export function dashLogInteraction(type: string, streamer: string, content: stri
   const time = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
   state.interactionLog.push({ time, type, streamer, content });
   if (state.interactionLog.length > 500) state.interactionLog = state.interactionLog.slice(-500);
+  // 每10条互动持久化一次
+  if (state.interactionLog.length % 10 === 0) saveDashboardState();
 }
 
 export function dashAddSummary(text: string) {
   const time = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
   state.summaries.push({ time, text });
+  // 持久化到文件
+  saveDashboardState();
+}
+
+function saveDashboardState() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const file = path.join(os.homedir(), '.thomas-claw-dashboard.json');
+    const data = {
+      interactionLog: state.interactionLog.slice(-200),
+      summaries: state.summaries,
+      stats: state.stats,
+      lastSaved: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
+    };
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  } catch {}
+}
+
+export function loadDashboardState() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const file = path.join(os.homedir(), '.thomas-claw-dashboard.json');
+    if (fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (data.interactionLog) state.interactionLog = data.interactionLog;
+      if (data.summaries) state.summaries = data.summaries;
+      console.log(`[看板] 加载历史数据: ${data.interactionLog?.length || 0}条互动, ${data.summaries?.length || 0}条总结`);
+    }
+  } catch {}
 }
 
 export function dashSetStep(step: string, desc: string) { state.currentStep = step; state.stepDesc = desc; }

@@ -27,12 +27,12 @@ export async function decideGiftLevel(
         model: 'gpt-4o-mini', max_tokens: 80,
         messages: [{
           role: 'system',
-          content: `你是打赏策略顾问。根据主播状态决定送多少钻的礼物。
-等级（测试阶段从低开始）：
-- 1-2钻（0.1-0.2元）：日常互动、打招呼
-- 9-10钻（0.9-1元）：主播唱完歌、感谢观众
-- 52-99钻（5-10元）：主播特别开心/感动/生日/重要时刻
-默认送最低级别。只有真正值得的时刻才升级。
+          content: `你是打赏策略顾问。决定送多少钻的礼物。
+等级：
+- 99钻（10元）：日常互动、主播跟小西瓜聊天
+- 199钻（20元）：主播感谢小西瓜、主播情绪特别好
+- 366-520钻（36-52元）：主播特别感动/生日/重要时刻
+默认99钻起步。
 JSON: {"maxDiamonds":数字,"reason":"原因"}`,
         }, {
           role: 'user',
@@ -46,8 +46,8 @@ JSON: {"maxDiamonds":数字,"reason":"原因"}`,
     const match = text.match(/\{[\s\S]*?\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
-      // 测试阶段硬限制：最多 100 钻 = 10 元
-      return { maxDiamonds: Math.min(parsed.maxDiamonds || 1, 100), reason: parsed.reason || '' };
+      // 硬限制：最多 520 钻 = 52 元
+      return { maxDiamonds: Math.max(Math.min(parsed.maxDiamonds || 99, 520), 99), reason: parsed.reason || '' };
     }
   } catch {}
   return { maxDiamonds: 1, reason: '默认' };

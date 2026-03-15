@@ -18,7 +18,7 @@ import { canAfford, recordSpending, getBudgetStatus } from './budget';
 import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
 import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM, checkAndReplyDMs } from './messenger';
 import { printDashboard, setDiscovered, addVisited, setCurrent, incDanmaku, incReply, incGift, addDM } from './dashboard';
-import { startWebDashboard, dashLog, dashSetStep, dashSetTaste, dashAddDiscovered, dashSetStreamer, dashSetRoomImage, dashSetVoice, dashSetAI, dashSetGift, dashSetDM, dashUpdateStats, dashLogInteraction, dashAddSummary } from './web-dashboard';
+import { startWebDashboard, dashLog, dashSetStep, dashSetTaste, dashAddDiscovered, dashSetStreamer, dashSetRoomImage, dashSetVoice, dashSetAI, dashSetGift, dashSetDM, dashUpdateStats, dashLogInteraction, dashAddSummary, loadDashboardState } from './web-dashboard';
 import { injectFingerprint, simulateHumanEntry, humanIdle, shouldTakeBreak, randomGreeting, nextReplyDelay } from './anti-detect';
 import { DanmakuMessage } from '../shared/types';
 
@@ -37,8 +37,9 @@ process.env.TZ = 'Asia/Shanghai';
 async function main() {
   if (!OPENAI_API_KEY) { console.error('请设置 OPENAI_API_KEY'); process.exit(1); }
 
-  // 启动 Web Dashboard
+  // 启动 Web Dashboard + 加载历史数据
   startWebDashboard(3456);
+  loadDashboardState();
 
   console.log('\n\x1b[1m  OpenClaw — 抖音全自动社交系统\x1b[0m\n');
 
@@ -209,9 +210,10 @@ async function main() {
           try { await showInfoSubtitle(page, '⭐ 主播提到了你！', 'rgba(241,196,15,0.9)'); } catch {}
         }
 
-        // 语音触发即时回复：主播说了话就尝试回复（冷却 40 秒）
+        // 语音触发回复：主播说了话尝试回复（冷却 60 秒，被点名则 10 秒）
         const now = Date.now();
-        if (now - lastReply >= 40_000) {
+        const voiceCooldown = mentionedMe ? 10_000 : 60_000;
+        if (now - lastReply >= voiceCooldown) {
           try {
             const ctx = (await parseRoomContext(page).catch(() => null)) || roomCtx;
             const suggestions = await generateSuggestions(OPENAI_API_KEY, ctx, getHistory(), getTranscriptHistory(), myReplies);
@@ -319,7 +321,7 @@ async function main() {
       } catch { break; }
 
       const now = Date.now();
-      const interval = mentionedMe ? 5000 : randomMs(45_000, 90_000);
+      const interval = mentionedMe ? 5000 : randomMs(60_000, 150_000);
       if (now - lastReply < interval || !OPENAI_API_KEY) continue;
 
       const history = getHistory();
@@ -381,8 +383,8 @@ async function main() {
     setCurrent('');
     printDashboard();
 
-    // 每 3 轮检查一次私信回复
-    if (visitCount % 3 === 0) {
+    // 每 2 轮检查一次私信回复（私信是核心目标！）
+    if (visitCount % 2 === 0) {
       try {
         const fs = require('fs');
         const path = require('path');
