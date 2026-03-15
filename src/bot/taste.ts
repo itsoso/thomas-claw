@@ -126,7 +126,7 @@ export async function matchesTaste(
         content: [
           {
             type: 'text',
-            text: `目标：帮用户找到可以社交、聊天、认识的年轻女主播。\n用户品味：${tasteProfile.summary}\n\nJSON: {"match":true/false,"score":1-10,"reason":"简短原因"}\n\nmatch=false的情况：看不清主播脸、不是年轻女性、录播/回放/电台/动画/纯文字、主播是男性、教学/知识/书法/国学/健身/带货/户外/钓鱼类内容。\n\n评分规则：\n- 必须能看到主播的脸（正脸或侧脸），只看到手/背影的=0分\n- 唱歌类最多5分\n- 聊天/日常/颜值类直播间加2分\n- 主播正面对镜头聊天互动的最高分`,
+            text: `目标：帮用户找到可以社交、聊天、认识的年轻女主播。\n用户品味：${tasteProfile.summary}\n\nJSON: {"match":true/false,"score":1-10,"reason":"简短原因"}\n\nmatch=false的情况：看不清主播脸、不是年轻女性、录播/回放/电台/动画/纯文字、主播是男性、教学/知识/书法/国学/健身/带货/户外/钓鱼类内容。\n\n评分规则：\n- 必须能看到主播的脸（正脸或侧脸），只看到手/背影的=0分\n- 唱歌/弹琴/演奏乐器类最多5分\n- 聊天/日常/颜值类直播间加2分\n- 主播正面对镜头聊天互动的最高分`,
           },
           {
             type: 'image_url',

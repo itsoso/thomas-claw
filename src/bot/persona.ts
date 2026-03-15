@@ -117,6 +117,9 @@ export function recordTopic(streamerName: string, topic: string): void {
 }
 
 /** 检查是否最近发过类似的话 */
+// 夸奖类关键词，用于检测语义重复
+const PRAISE_WORDS = ['好听', '真棒', '太美', '太好', '动人', '真好', '真美', '厉害', '迷人', '有魅力', '有感觉', '温暖', '精彩', '太赞', '好看', '真帅'];
+
 export function isDuplicate(streamerName: string, text: string): boolean {
   const mem = getMemory(streamerName);
   const recent = mem.myMessages.slice(-10);
@@ -125,7 +128,13 @@ export function isDuplicate(streamerName: string, text: string): boolean {
   // 相似度检查：超过一半字符重叠
   for (const prev of recent) {
     const overlap = [...text].filter(c => prev.includes(c)).length;
-    if (overlap > text.length * 0.6 && overlap > prev.length * 0.6) return true;
+    if (overlap > text.length * 0.5 && overlap > prev.length * 0.5) return true;
+  }
+  // 语义重复：连续夸奖同类型的话
+  const isPraise = PRAISE_WORDS.some(w => text.includes(w));
+  if (isPraise) {
+    const recentPraiseCount = recent.slice(-5).filter(m => PRAISE_WORDS.some(w => m.includes(w))).length;
+    if (recentPraiseCount >= 2) return true; // 最近5条里已经有2条夸奖了
   }
   return false;
 }

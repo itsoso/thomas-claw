@@ -292,7 +292,7 @@ async function main() {
       await sleep(10_000);
 
       // 如果连续 5 次 AI 都认为不该回复（唱歌直播间），提前离开
-      if (noReplyStreak >= 5 && Date.now() - lastReply > 120_000) {
+      if (noReplyStreak >= 3 && Date.now() - lastReply > 90_000) {
         console.log(`[调度] 互动机会少（可能是唱歌直播间），提前离开`);
         break;
       }
