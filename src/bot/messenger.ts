@@ -34,19 +34,29 @@ async function generateDMMessage(
     chatHistory.length > 0 ? `\n之前的私信对话:\n${chatHistory.slice(-10).join('\n')}` : '',
   ].filter(Boolean).join('\n');
 
-  const systemPrompt = isFirstMessage
-    ? `你在帮用户(小西瓜)给女主播发第一条私信。要求：
-- 自然、不油腻、不谄媚
-- 提到在直播间的互动经历，让对方想起你
-- 表达想进一步了解的意思，但不要太直接
-- 40字以内，要有记忆点
-- 不要用"你好"开头`
-    : `你在帮用户(小西瓜)继续和女主播私信聊天。要求：
-- 自然、有趣，像朋友聊天
-- 根据对方的回复自然接话
-- 适当分享自己（程序员、喜欢音乐美食旅行）
-- 如果聊得开，可以提议加微信方便联系（但不要太突兀）
-- 40字以内`;
+  // 根据对话轮数决定策略
+  const dmCount = chatHistory.filter(m => m.includes('小西瓜') || m.includes('[私信]')).length;
+
+  let systemPrompt: string;
+  if (isFirstMessage) {
+    systemPrompt = `你在帮"小西瓜"给女主播发第一条私信。
+- 提到在直播间的互动，让她想起你
+- 自然不油腻，有记忆点
+- 30字以内
+- 不要用"你好"开头`;
+  } else if (dmCount <= 3) {
+    systemPrompt = `你在帮"小西瓜"继续私信聊天（第${dmCount}轮）。
+- 接住对方的话，自然展开
+- 分享自己：喜欢旅行、美食、摄影
+- 问她的兴趣/日常
+- 30字以内`;
+  } else {
+    systemPrompt = `你在帮"小西瓜"继续私信聊天（第${dmCount}轮，关系已经不错了）。
+- 可以提议"加微信聊更方便"
+- 方式自然：比如"发你个旅行照片微信方便些"
+- 如果她之前拒绝过就不要再提
+- 30字以内`;
+  }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',

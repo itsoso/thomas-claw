@@ -9,9 +9,9 @@ export interface ScheduleConfig {
 }
 
 const DEFAULT_CONFIG: ScheduleConfig = {
-  minStayMinutes: 10,
-  maxStayMinutes: 25,
-  returnRatio: 0.4,  // 40% 概率回访
+  minStayMinutes: 15,
+  maxStayMinutes: 35,  // 待更久，建立更深的印象
+  returnRatio: 0.6,    // 60% 概率回访（深耕优先）
 };
 
 /** 从发现列表中选择下一个要去的直播间 */
@@ -20,22 +20,34 @@ export function pickNext(
   visitedThisRound: Set<string>,  // 本轮已访问（防连续重复）
   config: ScheduleConfig = DEFAULT_CONFIG,
 ): DiscoveredStreamer | null {
-  // 分类
-  const returning: DiscoveredStreamer[] = [];  // 去过的，可以回访
-  const fresh: DiscoveredStreamer[] = [];      // 没去过的新主播
+  // 分类：有反馈的高潜力 > 去过的 > 新主播
+  const highPriority: DiscoveredStreamer[] = [];  // 有反馈的（主播注意到过我们）
+  const returning: DiscoveredStreamer[] = [];      // 去过的
+  const fresh: DiscoveredStreamer[] = [];          // 新主播
 
   for (const s of discovered) {
-    // 本轮刚去过的跳过（防止连续去同一个）
     if (visitedThisRound.has(s.url)) continue;
 
     const mem = getMemory(s.name);
-    if (mem.visitCount >= 1) returning.push(s);
-    else fresh.push(s);
+    if (mem.streamerFeedback && mem.streamerFeedback.length > 0) {
+      highPriority.push(s);  // 最高优先：主播认识我们
+    } else if (mem.visitCount >= 1) {
+      returning.push(s);
+    } else {
+      fresh.push(s);
+    }
   }
 
-  // 40% 概率回访老主播（有记忆的优先）
-  const useReturning = Math.random() < config.returnRatio && returning.length > 0;
-  const pool = useReturning ? returning : (fresh.length > 0 ? fresh : returning);
+  // 优先级：高潜力(50%) > 回访(30%) > 新主播(20%)
+  let pool: DiscoveredStreamer[];
+  const roll = Math.random();
+  if (roll < 0.5 && highPriority.length > 0) {
+    pool = highPriority;
+  } else if (roll < 0.8 && returning.length > 0) {
+    pool = returning;
+  } else {
+    pool = fresh.length > 0 ? fresh : (returning.length > 0 ? returning : highPriority);
+  }
 
   if (pool.length === 0) return null;
 

@@ -55,7 +55,40 @@ async function main() {
   const session = await launchBrowser('https://live.douyin.com');
   const { page } = session;
 
+  // ── 启动时先检查所有私信回复（核心目标！） ──
+  console.log('[私信] 启动时检查所有已私信主播的回复...');
+  dashLog('系统', '私信', '检查所有已私信主播的回复...', 'dm');
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const memFile = path.join(os.homedir(), '.thomas-claw-memory.json');
+    if (fs.existsSync(memFile)) {
+      const memData = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+      for (const [name, mem] of Object.entries(memData.streamers || {}) as [string, any][]) {
+        const hasDM = mem.myMessages?.some((m: string) => m.startsWith('[私信]'));
+        const pUrl = mem.profileUrl;
+        if (!hasDM || !pUrl) continue;
+        console.log(`[私信] 检查 ${name} ...`);
+        dashLog('系统', '私信', `检查 ${name} 的回复`, 'dm');
+        try {
+          const replied = await checkAndReplyDMs(page, pUrl, name);
+          if (replied) {
+            addDM(name);
+            dashLogInteraction('私信回复', name, '已自动回复');
+          }
+        } catch (e: any) {
+          console.log(`[私信] ${name}: ${e.message}`);
+        }
+        await sleep(3000);
+      }
+    }
+  } catch {}
+  console.log('[私信] 检查完毕\n');
+
   // 发现
+  await page.goto('https://live.douyin.com', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  await sleep(3000);
   let discovered = await discoverStreamers(page, taste, 8);
   setDiscovered(discovered.length);
 
