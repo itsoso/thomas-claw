@@ -72,23 +72,39 @@ async function generateDMMessage(
 
 /** 在 DM 面板中输入并发送消息 */
 async function typeAndSendDM(page: Page, message: string): Promise<boolean> {
-  // 用 Playwright locator 点击 Draft.js 编辑器
-  const editor = page.locator('.public-DraftEditor-content[contenteditable="true"]');
-  if (!await editor.isVisible({ timeout: 3000 }).catch(() => false)) {
-    // 备选：找右侧任何 contenteditable
-    const fallback = page.locator('[contenteditable="true"]').last();
-    if (!await fallback.isVisible({ timeout: 1000 }).catch(() => false)) return false;
-    await fallback.click();
-  } else {
-    await editor.click();
-  }
+  // 等待编辑器出现（最多重试 3 次）
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // Draft.js 编辑器
+    const editor = page.locator('.public-DraftEditor-content[contenteditable="true"]');
+    if (await editor.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await editor.click();
+      await page.waitForTimeout(300);
+      await page.keyboard.type(message, { delay: 30 });
+      await page.waitForTimeout(300);
+      await page.keyboard.press('Enter');
+      return true;
+    }
 
-  await page.waitForTimeout(300);
-  // 用 keyboard.type 模拟真实输入（Draft.js 不支持 execCommand）
-  await page.keyboard.type(message, { delay: 30 });
-  await page.waitForTimeout(300);
-  await page.keyboard.press('Enter');
-  return true;
+    // 备选：任何右侧可见的 contenteditable
+    const allEditable = page.locator('[contenteditable="true"]');
+    const count = await allEditable.count();
+    for (let i = 0; i < count; i++) {
+      const el = allEditable.nth(i);
+      const box = await el.boundingBox().catch(() => null);
+      if (box && box.x > 800 && box.width > 100) {
+        await el.click();
+        await page.waitForTimeout(300);
+        await page.keyboard.type(message, { delay: 30 });
+        await page.waitForTimeout(300);
+        await page.keyboard.press('Enter');
+        return true;
+      }
+    }
+
+    // 重试：可能面板还没加载完
+    await page.waitForTimeout(2000);
+  }
+  return false;
 }
 
 /** 读取 DM 面板中的对话记录 */
@@ -117,11 +133,21 @@ async function openDMPanel(page: Page, profileUrl: string): Promise<boolean> {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(1000);
 
+  // 用 Playwright locator 找私信按钮（更可靠）
+  const dmBtn = page.locator('button:has-text("私信")').first();
+  if (await dmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await dmBtn.scrollIntoViewIfNeeded();
+    await dmBtn.click();
+    await page.waitForTimeout(3000);
+    return true;
+  }
+
+  // fallback: evaluate
   const clicked = await page.evaluate(() => {
     var btns = document.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) {
-      var text = (btns[i].textContent || '').trim();
-      if (text === '私信' && btns[i].className.includes('semi-button')) {
+      if ((btns[i].textContent || '').trim() === '私信') {
+        (btns[i] as HTMLElement).scrollIntoView();
         btns[i].click();
         return true;
       }
