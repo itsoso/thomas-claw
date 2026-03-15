@@ -1,5 +1,6 @@
 import { Page } from 'playwright';
 import { getMemory, recordMyMessage } from './persona';
+import { dashLogInteraction, dashLog } from './web-dashboard';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
@@ -192,8 +193,10 @@ export async function sendDirectMessage(
 
   const sent = await typeAndSendDM(page, message);
   if (sent) {
-    console.log(`[私信] ✅ 已发送给 ${streamerName}`);
+    console.log(`[私信] ✅ 已发送给 ${streamerName}: "${message}"`);
     recordMyMessage(streamerName, `[私信] ${message}`);
+    dashLogInteraction('私信发送', streamerName, message);
+    dashLog('私信', '发送', `→ ${streamerName}: "${message}"`, 'dm');
 
     // 截图存证
     await page.screenshot({ path: `test-screenshots/dm-${streamerName.slice(0, 10)}-${Date.now()}.png`, timeout: 5000 }).catch(() => {});
@@ -239,9 +242,10 @@ export async function checkAndReplyDMs(
   const hasNewReply = chatTexts.some(t => t !== myLastDM && !t.includes('关闭会话') && !t.includes('对方回复') && t.length > 2);
 
   if (hasNewReply) {
-    console.log(`[私信] 🎉 ${streamerName} 回复了！`);
-    // 这时候对方已关注/回复，可以继续对话
-    // TODO: 生成回复并发送
+    const replyText = chatTexts.find(t => t !== myLastDM && !t.includes('关闭会话') && !t.includes('对方回复')) || '';
+    console.log(`[私信] 🎉 ${streamerName} 回复了: "${replyText}"`);
+    dashLog('私信', '收到回复', `${streamerName}: "${replyText}"`, 'success');
+    dashLogInteraction('私信收到', streamerName, replyText);
     return true;
   }
 

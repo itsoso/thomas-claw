@@ -285,8 +285,9 @@ async function main() {
               if (result.sent) {
                 recordSpending(result.diamonds, roomCtx.streamerName, result.name);
                 incGift();
-                dashLogInteraction('送礼', roomCtx.streamerName, `${result.name} (${result.diamonds}钻=¥${(result.diamonds*0.1).toFixed(1)}) ${level.reason}`);
-                dashSetGift(`${result.name} ${result.diamonds}钻`);
+                dashLogInteraction('送礼', roomCtx.streamerName, `🎁 ${result.name} (${result.diamonds}钻=¥${(result.diamonds*0.1).toFixed(1)}) 原因:${level.reason}`);
+                dashLog('送礼', roomCtx.streamerName, `${result.name} ${result.diamonds}钻 ¥${(result.diamonds*0.1).toFixed(1)}`, 'gift');
+                dashSetGift(`${result.name} ${result.diamonds}钻 → ${roomCtx.streamerName}`);
                 console.log(`\x1b[35m[送礼]\x1b[0m 已送 ${result.name} (${result.diamonds}钻 = ¥${(result.diamonds * 0.1).toFixed(1)})`);
               }
             }
@@ -402,7 +403,7 @@ async function main() {
       try {
         console.log(`\n[私信] 关系=${memory.relationship}，发送破冰消息...`);
         const ok = await sendDirectMessage(page, profileUrl, roomCtx.streamerName);
-        if (ok) { addDM(roomCtx.streamerName); dashLogInteraction('私信', roomCtx.streamerName, '破冰消息已发送'); dashSetDM(roomCtx.streamerName); }
+        if (ok) { addDM(roomCtx.streamerName); dashSetDM(roomCtx.streamerName); }
       } catch (e: any) {
         console.log(`[私信] 失败: ${e.message}`);
       }
