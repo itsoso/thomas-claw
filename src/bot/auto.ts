@@ -91,12 +91,14 @@ async function main() {
   await sleep(3000);
   let discovered = await discoverStreamers(page, taste, 8);
   setDiscovered(discovered.length);
+  discovered.forEach(s => dashAddDiscovered({ name: s.name, score: s.score, reason: s.reason }));
 
   if (discovered.length === 0) {
     console.log('[发现] 未找到符合的主播。用默认品味重试...');
     taste = { descriptions: [], summary: '年轻女性主播', updatedAt: Date.now() };
     discovered = await discoverStreamers(page, taste, 8);
     setDiscovered(discovered.length);
+    discovered.forEach(s => dashAddDiscovered({ name: s.name, score: s.score, reason: s.reason }));
   }
 
   const visited = new Set<string>();  // 本轮已访问（每 5 个清空一次允许回访）
@@ -131,6 +133,7 @@ async function main() {
       const more = await discoverStreamers(page, taste!, 8);
       discovered.push(...more);
       setDiscovered(discovered.length);
+      more.forEach(s => dashAddDiscovered({ name: s.name, score: s.score, reason: s.reason }));
       if (more.length === 0) { console.log('[调度] 等待 3 分钟...'); await sleep(180_000); }
       continue;
     }

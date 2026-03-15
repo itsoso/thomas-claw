@@ -66,6 +66,7 @@ function saveDashboardState() {
       interactionLog: state.interactionLog.slice(-200),
       summaries: state.summaries,
       stats: state.stats,
+      discovered: state.discovered,
       lastSaved: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }),
     };
     fs.writeFileSync(file, JSON.stringify(data, null, 2));
@@ -82,6 +83,7 @@ export function loadDashboardState() {
       const data = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (data.interactionLog) state.interactionLog = data.interactionLog;
       if (data.summaries) state.summaries = data.summaries;
+      if (data.discovered) state.discovered = data.discovered;
       console.log(`[看板] 加载历史数据: ${data.interactionLog?.length || 0}条互动, ${data.summaries?.length || 0}条总结`);
     }
   } catch {}
@@ -89,7 +91,7 @@ export function loadDashboardState() {
 
 export function dashSetStep(step: string, desc: string) { state.currentStep = step; state.stepDesc = desc; }
 export function dashSetTaste(t: string) { state.taste = t; }
-export function dashAddDiscovered(d: { name: string; score: number; reason: string }) { state.discovered.push(d); }
+export function dashAddDiscovered(d: { name: string; score: number; reason: string }) { state.discovered.push(d); saveDashboardState(); }
 export function dashSetStreamer(s: string) { state.currentStreamer = s; }
 export function dashSetRoomImage(desc: string) { state.roomImage = desc; }
 export function dashSetVoice(t: string) { state.voiceText = t; }
