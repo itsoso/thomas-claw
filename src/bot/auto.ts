@@ -57,7 +57,8 @@ async function main() {
     setDiscovered(discovered.length);
   }
 
-  const visited = new Set<string>();
+  const visited = new Set<string>();  // 本轮已访问（每 5 个清空一次允许回访）
+  let visitCount = 0;
 
   process.on('SIGINT', async () => {
     printDashboard();
@@ -83,6 +84,9 @@ async function main() {
     }
 
     visited.add(target.url);
+    visitCount++;
+    // 每访问 5 个直播间，清空 visited 允许回访
+    if (visitCount % 5 === 0) visited.clear();
 
     // 进入直播间
     try {
@@ -151,6 +155,24 @@ async function main() {
           try { await showInfoSubtitle(page, '⭐ 主播提到了你！', 'rgba(241,196,15,0.9)'); } catch {}
         }
 
+        // 语音触发即时回复：主播说了话就尝试回复（冷却 40 秒）
+        const now = Date.now();
+        if (now - lastReply >= 40_000) {
+          try {
+            const ctx = (await parseRoomContext(page).catch(() => null)) || roomCtx;
+            const suggestions = await generateSuggestions(OPENAI_API_KEY, ctx, getHistory(), getTranscriptHistory(), myReplies);
+            const valid = suggestions.filter(s => !isDuplicate(roomCtx.streamerName, s.text));
+            if (valid.length > 0) {
+              lastReply = now;
+              const pick = valid[Math.floor(Math.random() * valid.length)];
+              console.log(`\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
+              try { await showInfoSubtitle(page, `💬 ${pick.text}`); } catch {}
+              const sent = await sendDanmaku(page, pick.text);
+              if (sent) { myReplies.push(pick.text); recordMyMessage(roomCtx.streamerName, pick.text); incReply(); }
+            }
+          } catch {}
+        }
+
         // 指令
         for (const a of detectActions(voiceText)) {
           if (executedActions.has(a)) continue;
@@ -213,7 +235,7 @@ async function main() {
       } catch { break; }
 
       const now = Date.now();
-      const interval = mentionedMe ? 5000 : randomMs(120_000, 240_000);
+      const interval = mentionedMe ? 5000 : randomMs(45_000, 90_000);
       if (now - lastReply < interval || !OPENAI_API_KEY) continue;
 
       const history = getHistory();

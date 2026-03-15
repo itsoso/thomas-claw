@@ -3,35 +3,37 @@ import { DiscoveredStreamer } from './discover';
 import { getMemory } from './persona';
 
 export interface ScheduleConfig {
-  minStayMinutes: number;   // 每个直播间最少待几分钟
-  maxStayMinutes: number;   // 最多待几分钟
+  minStayMinutes: number;
+  maxStayMinutes: number;
   returnRatio: number;      // 回访老主播的比例（0-1）
 }
 
 const DEFAULT_CONFIG: ScheduleConfig = {
   minStayMinutes: 10,
-  maxStayMinutes: 30,
-  returnRatio: 0.3,
+  maxStayMinutes: 25,
+  returnRatio: 0.4,  // 40% 概率回访
 };
 
 /** 从发现列表中选择下一个要去的直播间 */
 export function pickNext(
   discovered: DiscoveredStreamer[],
-  visited: Set<string>,
+  visitedThisRound: Set<string>,  // 本轮已访问（防连续重复）
   config: ScheduleConfig = DEFAULT_CONFIG,
 ): DiscoveredStreamer | null {
-  // 分成：老朋友 vs 新主播
-  const returning: DiscoveredStreamer[] = [];
-  const fresh: DiscoveredStreamer[] = [];
+  // 分类
+  const returning: DiscoveredStreamer[] = [];  // 去过的，可以回访
+  const fresh: DiscoveredStreamer[] = [];      // 没去过的新主播
 
   for (const s of discovered) {
-    if (visited.has(s.url)) continue;
+    // 本轮刚去过的跳过（防止连续去同一个）
+    if (visitedThisRound.has(s.url)) continue;
+
     const mem = getMemory(s.name);
-    if (mem.visitCount >= 2) returning.push(s);
+    if (mem.visitCount >= 1) returning.push(s);
     else fresh.push(s);
   }
 
-  // 按比例选择
+  // 40% 概率回访老主播（有记忆的优先）
   const useReturning = Math.random() < config.returnRatio && returning.length > 0;
   const pool = useReturning ? returning : (fresh.length > 0 ? fresh : returning);
 
@@ -59,8 +61,6 @@ export async function navigateToStream(page: Page, url: string): Promise<void> {
   console.log(`\n[调度] 切换到: ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(5000);
-
-  // 关闭可能的弹窗
   await page.keyboard.press('Escape').catch(() => {});
   await page.waitForTimeout(500);
 }
