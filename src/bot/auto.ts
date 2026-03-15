@@ -149,7 +149,7 @@ async function main() {
         try { await showVoiceSubtitle(page, voiceText); } catch {}
 
         // 被提到
-        if (/tapool|TAP|tap|太婆/i.test(voiceText) && !mentionedMe) {
+        if (/小西瓜|西瓜|tap/i.test(voiceText) && !mentionedMe) {
           mentionedMe = true;
           recordStreamerFeedback(roomCtx.streamerName, voiceText);
           try { await showInfoSubtitle(page, '⭐ 主播提到了你！', 'rgba(241,196,15,0.9)'); } catch {}

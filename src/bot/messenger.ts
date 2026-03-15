@@ -35,13 +35,13 @@ async function generateDMMessage(
   ].filter(Boolean).join('\n');
 
   const systemPrompt = isFirstMessage
-    ? `你在帮用户(tapool)给女主播发第一条私信。要求：
+    ? `你在帮用户(小西瓜)给女主播发第一条私信。要求：
 - 自然、不油腻、不谄媚
 - 提到在直播间的互动经历，让对方想起你
 - 表达想进一步了解的意思，但不要太直接
 - 40字以内，要有记忆点
 - 不要用"你好"开头`
-    : `你在帮用户(tapool)继续和女主播私信聊天。要求：
+    : `你在帮用户(小西瓜)继续和女主播私信聊天。要求：
 - 自然、有趣，像朋友聊天
 - 根据对方的回复自然接话
 - 适当分享自己（程序员、喜欢音乐美食旅行）
@@ -133,21 +133,24 @@ async function openDMPanel(page: Page, profileUrl: string): Promise<boolean> {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(1000);
 
-  // 用 Playwright locator 找私信按钮（更可靠）
+  // 确保页面滚到顶部（私信按钮在主页顶部）
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(1000);
+
+  // 方法1: Playwright locator
   const dmBtn = page.locator('button:has-text("私信")').first();
   if (await dmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await dmBtn.scrollIntoViewIfNeeded();
-    await dmBtn.click();
+    await dmBtn.click({ force: true });
     await page.waitForTimeout(3000);
     return true;
   }
 
-  // fallback: evaluate
+  // 方法2: evaluate 直接 click
   const clicked = await page.evaluate(() => {
     var btns = document.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) {
       if ((btns[i].textContent || '').trim() === '私信') {
-        (btns[i] as HTMLElement).scrollIntoView();
+        btns[i].scrollIntoView();
         btns[i].click();
         return true;
       }
@@ -155,7 +158,10 @@ async function openDMPanel(page: Page, profileUrl: string): Promise<boolean> {
     return false;
   });
 
-  if (!clicked) return false;
+  if (!clicked) {
+    console.log('[私信] 未找到私信按钮');
+    return false;
+  }
   await page.waitForTimeout(3000);
   return true;
 }

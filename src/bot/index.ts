@@ -83,8 +83,8 @@ async function main() {
     await showVoiceSubtitle(page, voiceText);
 
     // 检测主播是否提到我
-    if (voiceText.includes('tapool') || voiceText.includes('TAP') ||
-        voiceText.includes('tap') || voiceText.includes('太婆')) {
+    if (voiceText.includes('小西瓜') || voiceText.includes('西瓜') ||
+        voiceText.includes('tap')) {
       if (!mentionedMe) {
         mentionedMe = true;
         console.log(`\x1b[32m[注意]\x1b[0m 主播提到了你！`);

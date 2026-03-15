@@ -25,7 +25,7 @@ ${feedbackInfo}
 ${PERSONA.dontDo.map(d => '- ' + d).join('\n')}
 - 如果主播语音是歌词/背景音乐/自动广告语，返回空数组 []
 - 如果没什么好说的，也返回 []，沉默比废话好
-- 如果主播提到了你(tapool/太婆/tap)，一定要回应，抓住机会
+- 如果主播提到了你(小西瓜/太婆/tap)，一定要回应，抓住机会
 - 回复要结合直播间画像和上下文
 
 ## 输出
@@ -114,7 +114,7 @@ export async function shouldSendGift(
       max_tokens: 60,
       messages: [{
         role: 'system',
-        content: `只在这些情况送小礼物：主播直接感谢tapool、唱完整首歌、说要下播。歌词/广告不送。JSON:{"should":false,"reason":""}`,
+        content: `只在这些情况送小礼物：主播直接感谢小西瓜、唱完整首歌、说要下播。歌词/广告不送。JSON:{"should":false,"reason":""}`,
       }, {
         role: 'user',
         content: `${streamerName}说：「${voiceText}」`,
