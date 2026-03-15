@@ -25,6 +25,7 @@ const state = {
   giftSent: '',
   dmMessage: '',
   stats: { danmaku: 0, replies: 0, gifts: 0, voice: 0, spent: '0', remaining: '500' },
+  giftConfig: { maxPerGift: 100, strategy: 'AI动态决定: 1-100钻 (¥0.1-10)' },
 };
 
 export function dashLog(step: string, tag: string, message: string, type: LogEntry['type'] = 'info') {
@@ -131,6 +132,7 @@ function update() {
     if (s.aiReply) html += '<div class="ai-text">💬 ' + s.aiReply + '</div>';
     if (s.dmMessage) html += '<div class="dm-text">✉️ ' + s.dmMessage + '</div>';
     if (s.giftSent) html += '<div class="current-info"><div class="label">送礼</div><div class="value">🎁 ' + s.giftSent + '</div></div>';
+    html += '<div class="current-info"><div class="label">礼物策略</div><div class="value" style="font-size:12px;color:#f472b6">' + (s.giftConfig?.strategy || 'AI动态') + '</div></div>';
     document.getElementById('status').innerHTML = html;
 
     // Logs

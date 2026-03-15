@@ -7,11 +7,11 @@ import { discoverStreamers } from './discover';
 import { parseRoomContext } from './room-parser';
 import { startMonitor, getHistory } from './danmaku-monitor';
 import { sendDanmaku } from './danmaku-sender';
-import { sendCheapGift } from './gift-sender';
+import { sendGiftByBudget, decideGiftLevel } from './gift-sender';
 import { startVoiceMonitor, getTranscriptHistory } from './voice-monitor';
 import { injectSubtitleOverlay, showVoiceSubtitle, showInfoSubtitle } from './subtitle-overlay';
 import { followStreamer, joinFanClub, likeStream, detectActions } from './auto-actions';
-import { startRoomAnalysis } from './room-context';
+import { startRoomAnalysis, getRoomUnderstanding } from './room-context';
 import { recordVisit, recordMyMessage, recordStreamerFeedback, isDuplicate } from './persona';
 import { generateSuggestions, shouldSendGift } from './ai-suggest';
 import { canAfford, recordSpending, getBudgetStatus } from './budget';
@@ -183,15 +183,22 @@ async function main() {
           } catch {}
         }
 
-        // 送礼（每个直播间最多 2 次）
+        // 动态送礼（每个直播间最多 2 次，AI 决定金额）
         if (canAfford(1) && giftCountThisRoom < 2) {
           try {
             const d = await shouldSendGift(OPENAI_API_KEY, voiceText, roomCtx.streamerName);
             if (d.should) {
+              const ru = getRoomUnderstanding();
+              const level = await decideGiftLevel(voiceText, roomCtx.streamerName, memory.relationship, ru.mood || '正常');
               giftCountThisRoom++;
-              try { await showInfoSubtitle(page, `🎁 ${d.reason}`, 'rgba(231,76,60,0.85)'); } catch {}
-              const ok = await sendCheapGift(page);
-              if (ok) { recordSpending(1, roomCtx.streamerName, '小心心'); incGift(); }
+              console.log(`\x1b[35m[送礼]\x1b[0m AI 决定: ≤${level.maxDiamonds}钻 (${level.reason})`);
+              try { await showInfoSubtitle(page, `🎁 ${level.reason} (≤${level.maxDiamonds}钻)`, 'rgba(231,76,60,0.85)'); } catch {}
+              const result = await sendGiftByBudget(page, level.maxDiamonds);
+              if (result.sent) {
+                recordSpending(result.diamonds, roomCtx.streamerName, result.name);
+                incGift();
+                console.log(`\x1b[35m[送礼]\x1b[0m 已送 ${result.name} (${result.diamonds}钻 = ¥${(result.diamonds * 0.1).toFixed(1)})`);
+              }
             }
           } catch {}
         }
