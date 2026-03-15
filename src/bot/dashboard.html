@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Dashboard</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, 'SF Pro', sans-serif; background:#0a0a0f; color:#e0e0e0; height:100vh; display:flex; flex-direction:column; }
+.header { background:linear-gradient(135deg,#1a1a2e,#16213e); padding:14px 24px; border-bottom:1px solid #2a2a4a; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+.header h1 { font-size:20px; color:#00d4ff; }
+.header p { font-size:11px; color:#888; margin-top:2px; }
+#clock { font-size:13px; color:#00d4ff; font-family:monospace; }
+.tabs { display:flex; background:#15152a; border-bottom:1px solid #2a2a4a; flex-shrink:0; }
+.tab { padding:10px 24px; cursor:pointer; color:#666; font-size:13px; border-bottom:2px solid transparent; user-select:none; }
+.tab.active { color:#00d4ff; border-bottom-color:#00d4ff; font-weight:600; }
+.tab:hover { color:#aaa; }
+.tab-page { display:none; flex:1; padding:12px; overflow:hidden; }
+.tab-page.active { display:flex; gap:12px; }
+.panel { background:#12121f; border:1px solid #2a2a4a; border-radius:10px; overflow:hidden; display:flex; flex-direction:column; flex:1; min-height:0; }
+.panel-title { padding:10px 14px; font-size:12px; font-weight:600; color:#00d4ff; border-bottom:1px solid #1a1a3a; background:#15152a; flex-shrink:0; }
+.panel-body { padding:10px 14px; overflow-y:auto; flex:1; font-size:12px; line-height:1.6; min-height:0; }
+.info-box { padding:10px; background:#1a1a2e; border-radius:6px; margin-bottom:8px; }
+.info-label { font-size:10px; color:#666; }
+.info-value { font-size:13px; color:#e0e0e0; margin-top:2px; }
+.voice { background:#2a1a4a; padding:6px 10px; border-radius:6px; color:#c084fc; font-size:12px; margin-bottom:6px; }
+.ai { background:#3a2a1a; padding:6px 10px; border-radius:6px; color:#fbbf24; font-size:12px; margin-bottom:6px; }
+.dm { background:#1a1a4a; padding:6px 10px; border-radius:6px; color:#818cf8; font-size:12px; margin-bottom:6px; }
+.stats-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.stat { background:#1a1a2e; padding:10px; border-radius:8px; text-align:center; }
+.stat b { font-size:22px; color:#00d4ff; display:block; }
+.stat small { font-size:10px; color:#666; }
+.log-row { padding:3px 0; border-bottom:1px solid #1a1a2a; display:flex; gap:6px; font-size:11px; }
+.log-time { color:#555; min-width:55px; font-family:monospace; }
+.log-tag { padding:1px 5px; border-radius:3px; font-size:10px; }
+.t-info{background:#2a2a4a;color:#aaa}.t-success{background:#1a4a2a;color:#4ade80}.t-warning{background:#4a3a1a;color:#fbbf24}.t-error{background:#4a1a1a;color:#f87171}.t-ai{background:#3a2a1a;color:#fbbf24}.t-voice{background:#2a1a4a;color:#c084fc}.t-danmaku{background:#1a2a4a;color:#38bdf8}.t-gift{background:#4a1a3a;color:#f472b6}.t-dm{background:#1a1a4a;color:#818cf8}.t-system{background:#1a1a2a;color:#666}
+.log-msg { flex:1; word-break:break-word; }
+.disc-item { padding:6px 10px; background:#1a1a2e; border-radius:6px; margin-bottom:5px; display:flex; justify-content:space-between; }
+.score { color:#00d4ff; font-weight:700; }
+.int-row { padding:4px 0; border-bottom:1px solid #1a1a2a; font-size:11px; }
+.int-time { color:#555; }
+.int-type { font-weight:600; }
+.sum-card { padding:8px; background:#1a1a2e; border-radius:6px; margin-bottom:6px; font-size:11px; }
+.sum-time { color:#555; font-size:10px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div><h1>OpenClaw Dashboard</h1><p>Powered by Playwright + GPT-4o | 实时自动化监控</p></div>
+  <div id="clock"></div>
+</div>
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="overview">总览</div>
+  <div class="tab" data-tab="logs">实时日志</div>
+  <div class="tab" data-tab="interact">互动记录</div>
+  <div class="tab" data-tab="found">发现主播</div>
+</div>
+
+<div class="tab-page active" id="page-overview">
+  <div class="panel">
+    <div class="panel-title">当前状态</div>
+    <div class="panel-body" id="status"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">统计</div>
+    <div class="panel-body" id="stats"></div>
+  </div>
+</div>
+
+<div class="tab-page" id="page-logs">
+  <div class="panel" style="width:100%">
+    <div class="panel-title">实时日志 <span id="log-count" style="color:#555;font-weight:normal"></span></div>
+    <div class="panel-body" id="loglist" style="font-family:monospace"></div>
+  </div>
+</div>
+
+<div class="tab-page" id="page-interact">
+  <div class="panel" style="flex:2">
+    <div class="panel-title">互动详情</div>
+    <div class="panel-body" id="ilog"></div>
+  </div>
+  <div class="panel" style="flex:1">
+    <div class="panel-title">每30分钟总结</div>
+    <div class="panel-body" id="isummary"></div>
+  </div>
+</div>
+
+<div class="tab-page" id="page-found">
+  <div class="panel" style="width:100%">
+    <div class="panel-title">发现的主播</div>
+    <div class="panel-body" id="discovered"></div>
+  </div>
+</div>
+
+<script>
+// Tab switching
+document.getElementById('tabs').addEventListener('click', function(e) {
+  var t = e.target.dataset.tab;
+  if (!t) return;
+  document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.tab-page').forEach(function(el) { el.classList.remove('active'); });
+  e.target.classList.add('active');
+  document.getElementById('page-' + t).classList.add('active');
+});
+
+// Clock
+function tick() { document.getElementById('clock').textContent = new Date().toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', hour12:false}); }
+setInterval(tick, 1000); tick();
+
+// Data refresh
+function refresh() {
+  fetch('/api/state').then(function(r){return r.json()}).then(function(d) {
+    var s = d.state;
+
+    // Status
+    var h = '';
+    h += '<div class="info-box"><div class="info-label">当前步骤</div><div class="info-value" style="color:#00d4ff">' + (s.currentStep || '等待') + ' ' + (s.stepDesc || '') + '</div></div>';
+    if (s.taste) h += '<div class="info-box"><div class="info-label">品味画像</div><div class="info-value">' + s.taste + '</div></div>';
+    if (s.currentStreamer) h += '<div class="info-box"><div class="info-label">当前主播</div><div class="info-value" style="font-size:16px;color:#00d4ff">' + s.currentStreamer + '</div></div>';
+    if (s.roomImage) h += '<div class="info-box"><div class="info-label">画面分析</div><div class="info-value">' + s.roomImage + '</div></div>';
+    if (s.voiceText) h += '<div class="voice">🎤 ' + s.voiceText + '</div>';
+    if (s.aiReply) h += '<div class="ai">💬 ' + s.aiReply + '</div>';
+    if (s.dmMessage) h += '<div class="dm">✉️ ' + s.dmMessage + '</div>';
+    if (s.giftSent) h += '<div class="info-box"><div class="info-label">送礼</div><div class="info-value">🎁 ' + s.giftSent + '</div></div>';
+    document.getElementById('status').innerHTML = h;
+
+    // Stats
+    var st = s.stats;
+    document.getElementById('stats').innerHTML =
+      '<div class="stats-grid">' +
+      '<div class="stat"><b>' + st.danmaku + '</b><small>弹幕捕获</small></div>' +
+      '<div class="stat"><b>' + st.replies + '</b><small>AI回复</small></div>' +
+      '<div class="stat"><b>' + st.gifts + '</b><small>送礼次数</small></div>' +
+      '<div class="stat"><b>' + st.voice + '</b><small>语音转写</small></div>' +
+      '<div class="stat"><b>¥' + st.spent + '</b><small>已花费</small></div>' +
+      '<div class="stat"><b>¥' + st.remaining + '</b><small>剩余预算</small></div>' +
+      '</div>';
+
+    // Logs
+    var lh = '';
+    var entries = d.logs.slice(-100);
+    for (var i = entries.length-1; i >= 0; i--) {
+      var e = entries[i];
+      lh += '<div class="log-row"><span class="log-time">' + e.time + '</span><span class="log-tag t-' + e.type + '">' + e.tag + '</span><span class="log-msg">' + e.message + '</span></div>';
+    }
+    document.getElementById('loglist').innerHTML = lh;
+    document.getElementById('log-count').textContent = '(' + d.logs.length + ')';
+
+    // Interactions
+    var ih = '';
+    var il = (s.interactionLog || []).slice(-60);
+    for (var k = il.length-1; k >= 0; k--) {
+      var ie = il[k];
+      var tc = ie.type === '弹幕发送' ? '#fbbf24' : ie.type === '送礼' ? '#f472b6' : ie.type === '私信' || ie.type === '私信回复' ? '#818cf8' : '#888';
+      ih += '<div class="int-row"><span class="int-time">' + ie.time + '</span> <span class="int-type" style="color:' + tc + '">[' + ie.type + ']</span> <span style="color:#aaa">' + ie.streamer + '</span> ' + ie.content + '</div>';
+    }
+    document.getElementById('ilog').innerHTML = ih || '<div style="color:#555">等待互动...</div>';
+
+    // Summaries
+    var sh = '';
+    (s.summaries || []).forEach(function(sm) {
+      sh += '<div class="sum-card"><div class="sum-time">' + sm.time + '</div><div>' + sm.text + '</div></div>';
+    });
+    document.getElementById('isummary').innerHTML = sh || '<div style="color:#555">30分钟后生成</div>';
+
+    // Discovered
+    var dh = '';
+    (s.discovered || []).forEach(function(x) {
+      dh += '<div class="disc-item"><span>' + x.name + '</span><span class="score">' + x.score + '/10</span></div>';
+    });
+    document.getElementById('discovered').innerHTML = dh || '<div style="color:#555">搜索中...</div>';
+  }).catch(function(){});
+}
+setInterval(refresh, 1500); refresh();
+</script>
+</body>
+</html>

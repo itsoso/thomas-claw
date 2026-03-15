@@ -277,13 +277,33 @@ let server: http.Server | null = null;
 
 export function startWebDashboard(port = 3456): void {
   if (server) return;
+  const fs = require('fs');
+  const path = require('path');
+  const htmlFile = path.join(__dirname, 'dashboard.html');
+  let htmlContent = '';
+  try { htmlContent = fs.readFileSync(htmlFile, 'utf8'); } catch {
+    // fallback: try relative to cwd
+    try { htmlContent = fs.readFileSync(path.join(process.cwd(), 'src/bot/dashboard.html'), 'utf8'); } catch {}
+  }
+
   server = http.createServer((req, res) => {
     if (req.url === '/api/state') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ state, logs: logs.slice(-200) }));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(HTML);
+      // 每次读取文件方便开发时热更新
+      try {
+        const fresh = fs.readFileSync(htmlFile, 'utf8');
+        res.end(fresh);
+      } catch {
+        try {
+          const fresh = fs.readFileSync(path.join(process.cwd(), 'src/bot/dashboard.html'), 'utf8');
+          res.end(fresh);
+        } catch {
+          res.end(htmlContent || '<h1>Dashboard HTML not found</h1>');
+        }
+      }
     }
   });
   server.listen(port, () => {
