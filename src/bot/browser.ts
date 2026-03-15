@@ -1,4 +1,5 @@
 import { chromium, BrowserContext, Page } from 'playwright';
+import { injectFingerprint } from './anti-detect';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -27,6 +28,9 @@ export async function launchBrowser(liveUrl: string): Promise<BrowserSession> {
   });
 
   const page = context.pages()[0] || await context.newPage();
+
+  // 注入反检测指纹
+  try { await injectFingerprint(page); } catch {}
 
   console.log(`[浏览器] 正在打开直播间: ${liveUrl}`);
   await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });

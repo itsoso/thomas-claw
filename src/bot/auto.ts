@@ -19,6 +19,7 @@ import { pickNext, calculateStayDuration, navigateToStream } from './scheduler';
 import { getStreamerProfileUrl, sendDirectMessage, shouldSendDM, checkAndReplyDMs } from './messenger';
 import { printDashboard, setDiscovered, addVisited, setCurrent, incDanmaku, incReply, incGift, addDM } from './dashboard';
 import { startWebDashboard, dashLog, dashSetStep, dashSetTaste, dashAddDiscovered, dashSetStreamer, dashSetRoomImage, dashSetVoice, dashSetAI, dashSetGift, dashSetDM, dashUpdateStats, dashLogInteraction, dashAddSummary } from './web-dashboard';
+import { injectFingerprint, simulateHumanEntry, humanIdle, shouldTakeBreak, randomGreeting, nextReplyDelay } from './anti-detect';
 import { DanmakuMessage } from '../shared/types';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
@@ -163,7 +164,8 @@ async function main() {
     setCurrent(roomCtx.streamerName);
     dashSetStreamer(roomCtx.streamerName);
 
-    // 注入 UI
+    // 注入反检测 + UI
+    try { await injectFingerprint(page); } catch {}
     try { await injectSubtitleOverlay(page); } catch {}
 
     dashLog('互动', '进入', `${roomCtx.streamerName} (${target.score}/10) | ${memory.relationship} | 第${memory.visitCount}次`, 'success');
@@ -273,25 +275,38 @@ async function main() {
     let lastReply = Date.now() - randomMs(100_000, 220_000);
     let firstGreetSent = false;
 
-    // 20 秒后发第一条打招呼
+    // 模拟真人进入行为 + 打招呼
     setTimeout(async () => {
       if (firstGreetSent) return;
       firstGreetSent = true;
       try {
-        const greetings = ['来了来了', '晚上好呀', '路过看看', '刚到', '嗨'];
-        const pick = greetings[Math.floor(Math.random() * greetings.length)];
+        await simulateHumanEntry(page);
+        const pick = randomGreeting();
         console.log(`\x1b[33m[AI]\x1b[0m "${pick}" \x1b[90m(打招呼)\x1b[0m`);
         const sent = await sendDanmaku(page, pick);
         if (sent) { myReplies.push(pick); recordMyMessage(roomCtx.streamerName, pick); incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick); }
       } catch {}
     }, 20_000);
 
-    let noReplyStreak = 0; // AI 连续判断不该回复的次数
+    let noReplyStreak = 0;
+    let msgsSentThisRoom = 0;
+    const roomStartTime = Date.now();
 
     while (Date.now() < leaveAt) {
       await sleep(10_000);
 
-      // 如果连续 5 次 AI 都认为不该回复（唱歌直播间），提前离开
+      // 随机真人行为
+      if (Math.random() < 0.15) await humanIdle(page).catch(() => {});
+
+      // 休息策略
+      const minutesIn = (Date.now() - roomStartTime) / 60000;
+      if (shouldTakeBreak(msgsSentThisRoom, minutesIn)) {
+        const breakMs = 30_000 + Math.floor(Math.random() * 60_000);
+        console.log(`[反检测] 休息 ${Math.round(breakMs/1000)}秒`);
+        await sleep(breakMs);
+        continue;
+      }
+
       if (noReplyStreak >= 3 && Date.now() - lastReply > 90_000) {
         console.log(`[调度] 互动机会少（可能是唱歌直播间），提前离开`);
         break;

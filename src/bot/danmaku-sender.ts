@@ -1,7 +1,13 @@
 import { Page } from 'playwright';
+import { humanizeText, humanDelay, actionGap } from './anti-detect';
 
 export async function sendDanmaku(page: Page, text: string): Promise<boolean> {
-  // 抖音登录后弹幕输入框是 contenteditable div
+  // 反检测：微调文本
+  const finalText = humanizeText(text);
+
+  // 反检测：发送前随机等待
+  await actionGap();
+
   const filled = await page.evaluate((t) => {
     // 优先查找 contenteditable 编辑器（登录后）
     var editor = document.querySelector('[contenteditable="true"][class*="editor-kit"]') as HTMLElement
@@ -10,15 +16,13 @@ export async function sendDanmaku(page: Page, text: string): Promise<boolean> {
 
     if (editor) {
       editor.focus();
-      // 清空并输入
       editor.textContent = '';
       editor.textContent = t;
-      // 触发 input 事件
       editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: t }));
       return 'contenteditable';
     }
 
-    // 兜底：查找传统 input/textarea
+    // 兜底
     var selectors = [
       'input[class*="webcast-chatroom___input"]',
       'textarea[class*="webcast-chatroom"]',
@@ -44,18 +48,16 @@ export async function sendDanmaku(page: Page, text: string): Promise<boolean> {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     return 'input';
-  }, text);
+  }, finalText);
 
   if (!filled) {
     console.log('[弹幕] 未找到输入框');
     return false;
   }
 
-  // 短暂等待让编辑器处理
-  await page.waitForTimeout(200);
-
-  // 按回车发送
+  // 反检测：模拟真人按回车前的停顿
+  await page.waitForTimeout(200 + Math.floor(Math.random() * 300));
   await page.keyboard.press('Enter');
-  console.log(`[弹幕] 已发送: ${text}`);
+  console.log(`[弹幕] 已发送: ${finalText}`);
   return true;
 }
