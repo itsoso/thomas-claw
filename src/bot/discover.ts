@@ -51,6 +51,16 @@ export async function discoverStreamers(
       if (checkedUrls.has(card.url)) continue;
       checkedUrls.add(card.url);
 
+      // 人数过滤：优先小直播间(5-200人)，跳过超大直播间
+      const viewerMatch = card.text.match(/^(\d+)/);
+      if (viewerMatch) {
+        const viewers = parseInt(viewerMatch[1]);
+        if (viewers > 500) {
+          console.log(`  \x1b[90m✗ [skip] ${card.text.slice(0, 30)} — 人数太多(${viewers})无法互动\x1b[0m`);
+          continue;
+        }
+      }
+
       // 标题预过滤：录播/电台/回放/助眠/男性明显的直接跳过
       const skipKeywords = ['录播', '回放', '精彩片段', '电台', '助眠', '哄睡', '读文', '催眠',
         '大厨', '炒饭', '草莓', '带货', '卖货', '优惠', '下单', '发货', '猛男',

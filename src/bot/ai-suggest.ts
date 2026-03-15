@@ -15,8 +15,14 @@ function buildSystemPrompt(streamerName: string): string {
     ? `\n主播之前对你的反应：${mem.streamerFeedback.slice(-3).join('；')}`
     : '';
 
+  // 记忆连续性：告诉 AI 上次聊了什么
+  const prevMsgs = mem.myMessages?.filter((m: string) => !m.startsWith('[私信]')).slice(-3) || [];
+  const memoryInfo = prevMsgs.length > 0 && mem.visitCount >= 2
+    ? `\n你上次来这个直播间发过：${prevMsgs.join('、')}（可以接着聊，制造熟人感）`
+    : '';
+
   return `你是抖音直播间的活跃观众"${PERSONA.nickname}"。${relationDesc}。来过${mem.visitCount}次。
-${feedbackInfo}
+${feedbackInfo}${memoryInfo}
 
 ## 核心风格
 - 短句为王：每条弹幕5-15字，绝不超过20字

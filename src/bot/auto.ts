@@ -212,12 +212,11 @@ async function main() {
     const executedActions = new Set<string>();
     let profileUrl: string | null = null;
     let giftCountThisRoom = 0;
+    let danmakuCount = 0;
 
     try {
       // 先抓主播主页链接（后面发私信用）
       profileUrl = await getStreamerProfileUrl(page);
-
-      let danmakuCount = 0;
       await startMonitor(page, (msg: DanmakuMessage) => {
         incDanmaku();
         danmakuCount++;
@@ -257,7 +256,7 @@ async function main() {
               console.log(`\x1b[33m[AI]\x1b[0m "${pick.text}" \x1b[90m(${pick.reason})\x1b[0m`);
               try { await showInfoSubtitle(page, `💬 ${pick.text}`); } catch {}
               const sent = await sendDanmaku(page, pick.text);
-              if (sent) { myReplies.push(pick.text); recordMyMessage(roomCtx.streamerName, pick.text); incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick.text); }
+              if (sent) { myReplies.push(pick.text); recordMyMessage(roomCtx.streamerName, pick.text); msgsSentThisRoom++; incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick.text); }
             }
           } catch {}
         }
@@ -319,12 +318,13 @@ async function main() {
         const pick = randomGreeting();
         console.log(`\x1b[33m[AI]\x1b[0m "${pick}" \x1b[90m(打招呼)\x1b[0m`);
         const sent = await sendDanmaku(page, pick);
-        if (sent) { myReplies.push(pick); recordMyMessage(roomCtx.streamerName, pick); incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick); }
+        if (sent) { myReplies.push(pick); recordMyMessage(roomCtx.streamerName, pick); msgsSentThisRoom++; incReply(); dashLogInteraction('弹幕发送', roomCtx.streamerName, pick); }
       } catch {}
     }, 20_000);
 
     let noReplyStreak = 0;
     let msgsSentThisRoom = 0;
+    const MAX_MSGS_PER_ROOM = 5; // 反检测：每个直播间最多5条弹幕
     const roomStartTime = Date.now();
 
     while (Date.now() < leaveAt) {
@@ -343,7 +343,15 @@ async function main() {
       }
 
       if (noReplyStreak >= 3 && Date.now() - lastReply > 90_000) {
-        console.log(`[调度] 互动机会少（可能是唱歌直播间），提前离开`);
+        console.log(`[调度] 互动机会少，提前离开`);
+        dashLog('调度', '离开', `${roomCtx.streamerName} — 无互动机会`, 'warning');
+        break;
+      }
+
+      // 5分钟内弹幕里没有主播跟任何人互动 → 可能是放歌/静默直播
+      if (minutesIn > 5 && danmakuCount < 3) {
+        console.log(`[调度] 5分钟只有${danmakuCount}条弹幕，直播间不活跃，离开`);
+        dashLog('调度', '离开', `${roomCtx.streamerName} — 不活跃(${danmakuCount}条弹幕)`, 'warning');
         break;
       }
 
@@ -356,6 +364,7 @@ async function main() {
       const now = Date.now();
       const interval = mentionedMe ? 5000 : randomMs(60_000, 150_000);
       if (now - lastReply < interval || !OPENAI_API_KEY) continue;
+      if (msgsSentThisRoom >= MAX_MSGS_PER_ROOM) continue; // 反检测：到上限就停
 
       const history = getHistory();
       const voice = getTranscriptHistory();
@@ -378,6 +387,7 @@ async function main() {
           if (sent) {
             myReplies.push(pick.text);
             recordMyMessage(roomCtx.streamerName, pick.text);
+            msgsSentThisRoom++;
             incReply();
             dashLogInteraction('弹幕发送', roomCtx.streamerName, pick.text);
           }

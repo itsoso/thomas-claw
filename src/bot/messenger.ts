@@ -18,45 +18,31 @@ export async function getStreamerProfileUrl(page: Page): Promise<string | null> 
   });
 }
 
-/** 生成私信内容（破冰 or 持续对话） */
-async function generateDMMessage(
-  streamerName: string,
-  chatHistory: string[],  // 之前的对话记录
-  isFirstMessage: boolean,
-): Promise<string> {
+/** 判断是否应该发私信 — 更严格的条件 */
+export function shouldSendDM(streamerName: string): boolean {
+  const mem = getMemory(streamerName);
+  // 未互关只能发 1 条！所以条件要严格：
+  // 1. 主播至少注意到过我们（有 feedback）
+  // 2. 关系至少 regular（来过 3 次）
+  // 3. 还没发过私信
+  const hasFeedback = (mem.streamerFeedback?.length || 0) > 0;
+  const isRegular = mem.relationship === 'regular' || mem.relationship === 'familiar';
+  const alreadyDMed = mem.myMessages?.some((m: string) => m.startsWith('[私信]')) || false;
+
+  if (alreadyDMed) return false; // 已发过，不重复发（未互关只能1条）
+  return hasFeedback && isRegular;
+}
+
+/** 生成高质量破冰私信 — 未互关只有 1 次机会！ */
+async function generateDMMessage(streamerName: string): Promise<string> {
   const mem = getMemory(streamerName);
 
   const context = [
     `主播: ${streamerName}`,
-    mem.myMessages.length > 0 ? `我在直播间发过: ${mem.myMessages.slice(-5).join('、')}` : '',
-    mem.streamerFeedback.length > 0 ? `主播对我的反应: ${mem.streamerFeedback.slice(-3).join('、')}` : '',
-    `来过${mem.visitCount}次, 关系: ${mem.relationship}`,
-    chatHistory.length > 0 ? `\n之前的私信对话:\n${chatHistory.slice(-10).join('\n')}` : '',
-  ].filter(Boolean).join('\n');
-
-  // 根据对话轮数决定策略
-  const dmCount = chatHistory.filter(m => m.includes('小西瓜') || m.includes('[私信]')).length;
-
-  let systemPrompt: string;
-  if (isFirstMessage) {
-    systemPrompt = `你在帮"小西瓜"给女主播发第一条私信。
-- 提到在直播间的互动，让她想起你
-- 自然不油腻，有记忆点
-- 30字以内
-- 不要用"你好"开头`;
-  } else if (dmCount <= 3) {
-    systemPrompt = `你在帮"小西瓜"继续私信聊天（第${dmCount}轮）。
-- 接住对方的话，自然展开
-- 分享自己：喜欢旅行、美食、摄影
-- 问她的兴趣/日常
-- 30字以内`;
-  } else {
-    systemPrompt = `你在帮"小西瓜"继续私信聊天（第${dmCount}轮，关系已经不错了）。
-- 可以提议"加微信聊更方便"
-- 方式自然：比如"发你个旅行照片微信方便些"
-- 如果她之前拒绝过就不要再提
-- 30字以内`;
-  }
+    `我在直播间发过: ${mem.myMessages?.filter((m: string) => !m.startsWith('[私信]')).slice(-8).join('、') || '无'}`,
+    `主播对我的反应: ${mem.streamerFeedback?.join('、') || '无'}`,
+    `来过${mem.visitCount}次`,
+  ].join('\n');
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -66,84 +52,41 @@ async function generateDMMessage(
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 80,
-      temperature: 0.85,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: context },
-      ],
+      max_tokens: 60,
+      temperature: 0.8,
+      messages: [{
+        role: 'system',
+        content: `你在帮"小西瓜"给女主播发私信。
+重要：对方没关注我们，我们只有这一次机会发消息！必须让她想回复。
+
+要求：
+- 提到具体的直播间互动细节（她说了什么、做了什么）
+- 制造好奇心或情感共鸣
+- 不要泛泛而谈（"你很有趣"这种谁都能说的别用）
+- 25字以内，短比长好
+- 不要用"你好"开头
+- 不要表白/告白
+
+好的例子：
+- "你上次说的那个XX，后来怎么样了？一直想知道"
+- "看你每次直播都很开心，是天生的还是练出来的"
+- "你说过喜欢XX，我刚好也是，太巧了"`
+      }, {
+        role: 'user',
+        content: context
+      }],
     }),
   });
 
-  if (!response.ok) return isFirstMessage ? '之前在直播间聊过，觉得你很有意思' : '哈哈是的';
+  if (!response.ok) return '你上次说的那个好有意思 一直想聊来着';
   const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() ?? '你好';
+  return data.choices?.[0]?.message?.content?.trim() ?? '你上次说的那个好有意思';
 }
 
-/** 在 DM 面板中输入并发送消息 */
-async function typeAndSendDM(page: Page, message: string): Promise<boolean> {
-  // 等待编辑器出现（最多重试 3 次）
-  for (let attempt = 0; attempt < 3; attempt++) {
-    // Draft.js 编辑器
-    const editor = page.locator('.public-DraftEditor-content[contenteditable="true"]');
-    if (await editor.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await editor.click();
-      await page.waitForTimeout(300);
-      await page.keyboard.type(message, { delay: 30 });
-      await page.waitForTimeout(300);
-      await page.keyboard.press('Enter');
-      return true;
-    }
-
-    // 备选：任何右侧可见的 contenteditable
-    const allEditable = page.locator('[contenteditable="true"]');
-    const count = await allEditable.count();
-    for (let i = 0; i < count; i++) {
-      const el = allEditable.nth(i);
-      const box = await el.boundingBox().catch(() => null);
-      if (box && box.x > 800 && box.width > 100) {
-        await el.click();
-        await page.waitForTimeout(300);
-        await page.keyboard.type(message, { delay: 30 });
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Enter');
-        return true;
-      }
-    }
-
-    // 重试：可能面板还没加载完
-    await page.waitForTimeout(2000);
-  }
-  return false;
-}
-
-/** 读取 DM 面板中的对话记录 */
-async function readDMHistory(page: Page): Promise<string[]> {
-  return page.evaluate(() => {
-    var messages: string[] = [];
-    // DM 面板中的消息气泡
-    var bubbles = document.querySelectorAll('[class*="msg"], [class*="message"], [class*="bubble"], [class*="chat-item"]');
-    bubbles.forEach(function(el) {
-      var rect = el.getBoundingClientRect();
-      if (rect.x > 800 && rect.width > 50 && rect.height > 10) {
-        var text = (el.textContent || '').trim();
-        if (text.length > 0 && text.length < 200) {
-          messages.push(text);
-        }
-      }
-    });
-    return messages;
-  });
-}
-
-/** 打开主播主页的私信面板 */
+/** 打开 DM 面板 */
 async function openDMPanel(page: Page, profileUrl: string): Promise<boolean> {
   await page.goto(profileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(4000);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(1000);
-
-  // 确保页面滚到顶部（私信按钮在主页顶部）
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(1000);
 
@@ -155,7 +98,7 @@ async function openDMPanel(page: Page, profileUrl: string): Promise<boolean> {
     return true;
   }
 
-  // 方法2: evaluate 直接 click
+  // 方法2: evaluate
   const clicked = await page.evaluate(() => {
     var btns = document.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) {
@@ -176,32 +119,84 @@ async function openDMPanel(page: Page, profileUrl: string): Promise<boolean> {
   return true;
 }
 
-/** 完整的私信流程：打开面板 → 检查历史 → 发送/继续对话 */
+/** 检查是否已经发过私信（避免重复发送） */
+async function hasExistingDM(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    // 检查右侧面板是否有"只能发送一条"的提示
+    var text = document.body?.innerText || '';
+    return text.includes('只能发送一条') || text.includes('对方回复或关注你之前');
+  });
+}
+
+/** 在 DM 面板中输入并发送 */
+async function typeAndSendDM(page: Page, message: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const editor = page.locator('.public-DraftEditor-content[contenteditable="true"]');
+    if (await editor.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await editor.click();
+      await page.waitForTimeout(300);
+      await page.keyboard.type(message, { delay: 30 });
+      await page.waitForTimeout(300);
+
+      // 验证输入
+      const typed = await editor.textContent().catch(() => '');
+      if (!typed || typed.length < 3) {
+        await page.waitForTimeout(1000);
+        continue;
+      }
+
+      await page.keyboard.press('Enter');
+      return true;
+    }
+
+    // 找其他 contenteditable
+    const allCE = page.locator('[contenteditable="true"]');
+    const count = await allCE.count();
+    for (let i = 0; i < count; i++) {
+      const box = await allCE.nth(i).boundingBox().catch(() => null);
+      if (box && box.x > 800 && box.width > 100) {
+        await allCE.nth(i).click();
+        await page.waitForTimeout(300);
+        await page.keyboard.type(message, { delay: 30 });
+        await page.waitForTimeout(300);
+        await page.keyboard.press('Enter');
+        return true;
+      }
+    }
+
+    await page.waitForTimeout(2000);
+  }
+  return false;
+}
+
+/** 发送私信 — 完整流程 */
 export async function sendDirectMessage(
   page: Page,
   profileUrl: string,
   streamerName: string,
-  customMessage?: string,
 ): Promise<boolean> {
   console.log(`[私信] 打开 ${streamerName} 的主页...`);
 
   const opened = await openDMPanel(page, profileUrl);
-  if (!opened) {
-    console.log('[私信] 未找到私信按钮');
+  if (!opened) return false;
+
+  // 检查是否已有对话（未互关只能发1条）
+  const existing = await hasExistingDM(page);
+  if (existing) {
+    console.log(`[私信] ${streamerName} 已发过消息且对方未回复，跳过`);
     return false;
   }
 
-  // 读取已有对话
-  const history = await readDMHistory(page);
-  const isFirst = history.length === 0;
-
-  const message = customMessage || await generateDMMessage(streamerName, history, isFirst);
-  console.log(`[私信] ${isFirst ? '破冰' : '继续对话'}: "${message}"`);
+  const message = await generateDMMessage(streamerName);
+  console.log(`[私信] 破冰: "${message}"`);
 
   const sent = await typeAndSendDM(page, message);
   if (sent) {
     console.log(`[私信] ✅ 已发送给 ${streamerName}`);
     recordMyMessage(streamerName, `[私信] ${message}`);
+
+    // 截图存证
+    await page.screenshot({ path: `test-screenshots/dm-${streamerName.slice(0, 10)}-${Date.now()}.png`, timeout: 5000 }).catch(() => {});
     return true;
   }
 
@@ -209,7 +204,7 @@ export async function sendDirectMessage(
   return false;
 }
 
-/** 检查是否有主播回复了私信，并自动回复 */
+/** 检查已发私信的主播是否回复了 */
 export async function checkAndReplyDMs(
   page: Page,
   profileUrl: string,
@@ -218,32 +213,37 @@ export async function checkAndReplyDMs(
   const opened = await openDMPanel(page, profileUrl);
   if (!opened) return false;
 
-  const history = await readDMHistory(page);
-  if (history.length === 0) return false;
+  // 检查右侧面板是否有新消息（不只是我们发的）
+  const chatTexts = await page.evaluate(() => {
+    var texts: string[] = [];
+    document.querySelectorAll('div, span, p').forEach(el => {
+      var rect = (el as HTMLElement).getBoundingClientRect();
+      // 右侧面板的聊天气泡
+      if (rect.x > 850 && rect.x < 1350 && rect.width > 50 && rect.height > 15 && rect.height < 80 && rect.y > 200 && rect.y < 700) {
+        var text = (el.textContent || '').trim();
+        if (text.length > 0 && text.length < 100 && !text.includes('发送消息') && !text.includes('只能发送')) {
+          texts.push(text);
+        }
+      }
+    });
+    return [...new Set(texts)];
+  });
 
-  // 检查最后一条是不是对方发的（不是我们发的）
-  const lastMsg = history[history.length - 1];
+  console.log(`[私信检查] ${streamerName}: ${chatTexts.length} 条消息`);
+
+  // 如果只有我们发的消息（或者系统提示），对方没回复
   const mem = getMemory(streamerName);
-  const myLastDM = mem.myMessages.filter(m => m.startsWith('[私信]')).pop();
+  const myLastDM = mem.myMessages?.filter((m: string) => m.startsWith('[私信]')).pop()?.replace('[私信] ', '') || '';
 
-  if (myLastDM && lastMsg === myLastDM.replace('[私信] ', '')) {
-    // 最后一条是我发的，对方没回复
-    return false;
+  // 检查是否有不是我们发的新消息
+  const hasNewReply = chatTexts.some(t => t !== myLastDM && !t.includes('关闭会话') && !t.includes('对方回复') && t.length > 2);
+
+  if (hasNewReply) {
+    console.log(`[私信] 🎉 ${streamerName} 回复了！`);
+    // 这时候对方已关注/回复，可以继续对话
+    // TODO: 生成回复并发送
+    return true;
   }
 
-  // 对方回复了！继续对话
-  console.log(`[私信] ${streamerName} 回复了: "${lastMsg}"`);
-  const reply = await generateDMMessage(streamerName, history, false);
-  const sent = await typeAndSendDM(page, reply);
-  if (sent) {
-    console.log(`[私信] ✅ 回复: "${reply}"`);
-    recordMyMessage(streamerName, `[私信] ${reply}`);
-  }
-  return sent;
-}
-
-/** 判断是否应该发私信 */
-export function shouldSendDM(streamerName: string): boolean {
-  const mem = getMemory(streamerName);
-  return mem.relationship === 'regular' || mem.relationship === 'familiar';
+  return false;
 }

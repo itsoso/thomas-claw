@@ -230,7 +230,7 @@ async function main() {
         case 'gl': (await listGifts(page)).forEach((g, i) => console.log(`  ${i+1}. ${g.name} (${g.price})`)); break;
         case 'dm': {
           const pUrl = await getStreamerProfileUrl(page);
-          if (pUrl) await sendDirectMessage(page, pUrl, roomContext.streamerName, arg || undefined);
+          if (pUrl) await sendDirectMessage(page, pUrl, roomContext.streamerName);
           else console.log('未找到主播主页链接');
           // 导航回直播间
           await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
