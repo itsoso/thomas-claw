@@ -126,7 +126,7 @@ export async function matchesTaste(
         content: [
           {
             type: 'text',
-            text: `用户品味：${tasteProfile.summary}\n\n这个直播间的主播是否符合？JSON: {"match":true/false,"score":1-10,"reason":"简短原因"}。如果看不清主播或不是女性直播间，match=false。`,
+            text: `用户品味：${tasteProfile.summary}\n\n这个直播间的主播是否符合？JSON: {"match":true/false,"score":1-10,"reason":"简短原因"}。\n如果看不清主播、不是女性直播间、明显是录播/回放/电台/无人画面/纯文字画面/动画，match=false。`,
           },
           {
             type: 'image_url',

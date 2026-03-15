@@ -51,6 +51,15 @@ export async function discoverStreamers(
       if (checkedUrls.has(card.url)) continue;
       checkedUrls.add(card.url);
 
+      // 标题预过滤：录播/电台/回放/助眠/男性明显的直接跳过
+      const skipKeywords = ['录播', '回放', '精彩片段', '电台', '助眠', '哄睡', '读文', '催眠',
+        '大厨', '炒饭', '草莓', '带货', '卖货', '优惠', '下单', '发货', '猛男',
+        '象棋', '钓鱼', '游戏解说', '京剧', '展播', '频道'];
+      if (skipKeywords.some(kw => card.text.includes(kw))) {
+        console.log(`  \x1b[90m✗ [skip] ${card.text.slice(0, 30)} — 标题过滤\x1b[0m`);
+        continue;
+      }
+
       try {
         // 截取卡片区域
         const screenshot = await page.screenshot({

@@ -95,6 +95,25 @@ async function main() {
     const roomCtx = await parseRoomContext(page);
     if (!roomCtx) { console.log('[调度] 解析失败，跳过'); continue; }
 
+    // 录播/回放检测：检查页面是否有实时互动元素
+    const isLive = await page.evaluate(() => {
+      // 检查是否有弹幕输入框（录播通常没有）
+      var hasInput = !!document.querySelector('[contenteditable="true"]') ||
+        !!document.querySelector('input[placeholder*="说点什么"]') ||
+        !!document.querySelector('[class*="chatroom___input"]');
+      // 检查是否有"录播"/"回放"标记
+      var pageText = document.body?.innerText?.slice(0, 2000) || '';
+      var isReplay = pageText.includes('录播') || pageText.includes('回放') || pageText.includes('重播');
+      // 检查聊天区是否存在
+      var hasChat = !!document.querySelector('[class*="webcast-chatroom"]');
+      return hasInput && hasChat && !isReplay;
+    });
+
+    if (!isLive) {
+      console.log(`[调度] ${roomCtx.streamerName} 疑似录播/回放，跳过`);
+      continue;
+    }
+
     const memory = recordVisit(roomCtx.streamerName);
     addVisited(roomCtx.streamerName);
     setCurrent(roomCtx.streamerName);
